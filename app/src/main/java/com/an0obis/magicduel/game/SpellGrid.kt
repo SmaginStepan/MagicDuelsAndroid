@@ -26,6 +26,18 @@ class SpellGrid(private val random: Random, private val elements: List<Element>)
         return spells[row][col]
     }
 
+    /** The cast was cancelled: the dissolved spells come back unchanged. Returns those cells. */
+    fun restore(): List<Cell> {
+        val restored = ArrayList<Cell>()
+        for (r in 0 until rows) for (c in 0 until cols) {
+            if (refreshing[r][c]) {
+                refreshing[r][c] = false
+                restored += Cell(r, c)
+            }
+        }
+        return restored
+    }
+
     /** Fills every dissolved cell with a new random spell and returns those cells. */
     fun refill(): List<Cell> {
         val refilled = ArrayList<Cell>()

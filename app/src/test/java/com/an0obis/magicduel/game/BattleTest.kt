@@ -45,6 +45,28 @@ class BattleTest {
     }
 
     @Test
+    fun cancellingACastFiresNothingAndBringsTheSpellsBack() {
+        val b = Battle(dummy, seed = 3, introTime = 0f)
+        val before = (0 until b.spells.rows).map { r -> (0 until b.spells.cols).map { c -> b.spells[r, c] } }
+        assertFalse(b.cancelCast()) // nothing to cancel yet
+        assertTrue(b.tryCast(2, 1))
+        run(b, Rules.PLAYER_CAST_TIME / 2)
+        assertTrue(b.cancelCast())
+        assertFalse(b.player.isCasting)
+        val after = (0 until b.spells.rows).map { r -> (0 until b.spells.cols).map { c -> b.spells[r, c] } }
+        assertEquals(before, after)
+        assertTrue((0 until b.spells.rows).all { r -> (0 until b.spells.cols).all { c -> b.spells.isAvailable(r, c) } })
+        val events = b.drainEvents()
+        val cancelled = events.filterIsInstance<BattleEvent.CastCancelled>().single()
+        assertEquals(7, cancelled.cells.size)
+        // Nothing is ever launched, and a new cast can start straight away.
+        run(b, Rules.PLAYER_CAST_TIME + 1f)
+        assertTrue(b.projectiles.isEmpty())
+        assertTrue(b.drainEvents().none { it is BattleEvent.Launched })
+        assertTrue(b.tryCast(0, 0))
+    }
+
+    @Test
     fun shotIntoFullRowBackfiresOnCaster() {
         val board = Board.parse(".....", ".....", ".....", ".....", "FWEAF")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)

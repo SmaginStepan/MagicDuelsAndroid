@@ -36,6 +36,8 @@ class Tutorial {
         when (e) {
             is BattleEvent.CastStarted ->
                 if (e.side == Side.PLAYER && step == Step.TAP_SPELL) advance(Step.WATCH_SHOT)
+            is BattleEvent.CastCancelled ->
+                if (e.side == Side.PLAYER && step == Step.WATCH_SHOT) advance(Step.TAP_SPELL)
             is BattleEvent.Landed ->
                 if (e.side == Side.PLAYER && step == Step.WATCH_SHOT) advance(Step.MAKE_LINE)
             is BattleEvent.Backfired -> if (e.side == Side.PLAYER) {

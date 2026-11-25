@@ -89,6 +89,9 @@ class Projectile internal constructor(
 /** Things that happened during [Battle.update], for the screen to animate. */
 sealed interface BattleEvent {
     data class CastStarted(val side: Side, val element: Element, val lane: Int) : BattleEvent
+
+    /** The player cancelled a cast: nothing was fired and the dissolved spells in [cells] came back. */
+    data class CastCancelled(val side: Side, val element: Element, val lane: Int, val cells: List<Cell>) : BattleEvent
     data class Launched(val side: Side, val element: Element, val lane: Int) : BattleEvent
     data class Landed(val side: Side, val element: Element, val row: Int, val col: Int) : BattleEvent
     data class Backfired(val side: Side, val lane: Int) : BattleEvent
@@ -191,6 +194,20 @@ class Battle(
         val element = spells.take(row, col)
         player.startCast(element, lane = row)
         events += BattleEvent.CastStarted(Side.PLAYER, element, row)
+        return true
+    }
+
+    /**
+     * The player cancels the spell being cast: nothing is fired, and the spells that dissolved when it
+     * was tapped come back unchanged, so another spell can be cast right away.
+     * Returns false if there was nothing to cancel.
+     */
+    fun cancelCast(): Boolean {
+        if (winner != null) return false
+        val element = player.castElement ?: return false
+        val lane = player.castLane
+        player.cancelCast()
+        events += BattleEvent.CastCancelled(Side.PLAYER, element, lane, spells.restore())
         return true
     }
 

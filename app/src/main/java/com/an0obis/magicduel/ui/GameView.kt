@@ -100,6 +100,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val dialogButtons = LinkedHashMap<String, RectF>()
     private val battleMenuButton = RectF()
 
+    /** "Cancel cast" button above your mage; only shown (and tappable) while you are casting. */
+    private val cancelCastButton = RectF()
+
     /** 1 right after the bot's queue moved up by one spell, easing to 0 (the chips slide left). */
     private var queueShift = 0f
 
@@ -355,6 +358,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         when (e) {
             is BattleEvent.CastStarted -> Unit
+            is BattleEvent.CastCancelled -> {
+                // The dissolved spells pop back in; the staff lowers without a shot.
+                e.cells.forEach { tilePop[it.row][it.col] = 0f }
+                tappedRow = -1
+                tappedCol = -1
+                afterglow[Side.PLAYER.ordinal] = 0f
+                // Starts below where the button was, so it fades out before reaching your HP bar.
+                texts += FloatText("Cancelled", cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
+            }
             is BattleEvent.Launched -> {
                 val from = staffTip(e.side)
                 bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
@@ -430,6 +442,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (battle.winner != null) {
             if (endTimer > TAP_DELAY) nextBattle()
+            return true
+        }
+        if (battle.player.isCasting && RectF(cancelCastButton).apply { inset(-0.15f * u, -0.15f * u) }.contains(x, y)) {
+            if (battle.cancelCast()) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             return true
         }
         if (x < gridLeft || y < gridTop) return true
@@ -508,6 +524,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawProjectiles(c)
         drawPlayerPanel(c)
         drawPlayerAvatar(c)
+        drawCancelCast(c)
         drawSpellGrid(c)
         drawBolts(c)
         drawSparks(c)
@@ -817,6 +834,34 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         for (i in -1..1) c.drawLine(ix - 0.13f * u * k, iy + i * 0.1f * u * k, ix + 0.13f * u * k, iy + i * 0.1f * u * k, stroke)
         label(c, "Menu", battleMenuButton.left + 0.6f * u * k, iy + 0.1f * u * k, 0.28f * u * k, Pal.TEXT, Paint.Align.LEFT)
         label(c, "Level ${level + 1}", battleMenuButton.left - MENU_LABEL_GAP * u, iy + 0.13f * u * k, 0.26f * u * k, Pal.TEXT_DIM, Paint.Align.RIGHT)
+    }
+
+    /**
+     * "Cancel cast" button above your mage's head. It exists only while a cast is in progress:
+     * it fades in when you tap a spell and is gone as soon as the cast is fired or cancelled.
+     */
+    private fun drawCancelCast(c: Canvas) {
+        val p = battle.player
+        val w = 3.0f * u
+        val h = 0.8f * u
+        val top = playerTop + 1.15f * u
+        cancelCastButton.set(playerX - w / 2f, top, playerX + w / 2f, top + h)
+        if (!p.isCasting || battle.winner != null) return
+        val a = min(1f, p.castProgress * p.castTime / CANCEL_FADE_IN)
+        val r = h / 2f
+        fill.color = withAlpha(Pal.CARD, (235 * a).toInt())
+        c.drawRoundRect(cancelCastButton, r, r, fill)
+        stroke.color = withAlpha(Pal.ENEMY_HP, (255 * a).toInt())
+        stroke.strokeWidth = 0.045f * u
+        c.drawRoundRect(cancelCastButton, r, r, stroke)
+        // ✕ drawn as two lines, then the label.
+        val cx = cancelCastButton.left + 0.45f * u
+        val cy = cancelCastButton.centerY()
+        val s = 0.14f * u
+        stroke.strokeWidth = 0.06f * u
+        c.drawLine(cx - s, cy - s, cx + s, cy + s, stroke)
+        c.drawLine(cx + s, cy - s, cx - s, cy + s, stroke)
+        label(c, "Cancel cast", cancelCastButton.left + 0.8f * u, cy + 0.12f * u, 0.34f * u, Pal.TEXT, Paint.Align.LEFT, a)
     }
 
     // ================================================================ tutorial, menu and dialogs
@@ -1137,6 +1182,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_PLAYED = "played"
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
+        const val CANCEL_FADE_IN = 0.15f
 
         /** Size of the duel's Menu button and level label (1 = original design). */
         const val MENU_SCALE = 1.2f

@@ -30,6 +30,14 @@ class TutorialTest {
     }
 
     @Test
+    fun cancellingTheFirstCastGoesBackToTheTapHint() {
+        val t = Tutorial()
+        t.onEvent(BattleEvent.CastStarted(Side.PLAYER, Element.FIRE, 1))
+        t.onEvent(BattleEvent.CastCancelled(Side.PLAYER, Element.FIRE, 1, emptyList()))
+        assertEquals(Tutorial.TAP_SPELL, t.hint)
+    }
+
+    @Test
     fun enemyCastsDoNotAdvanceTheTutorial() {
         val t = Tutorial()
         t.onEvent(BattleEvent.CastStarted(Side.ENEMY, Element.WATER, 0))

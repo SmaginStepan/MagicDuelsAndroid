@@ -11,6 +11,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 ## Casting
 - Tap a spell: your mage casts it for a fixed 2.7 s (animated). You can't cast again until it finishes.
 - The tapped spell's whole row and column (7 spells) dissolve and are refilled when the cast completes.
+- While casting, a **Cancel cast** button appears above your mage. Cancelling fires nothing and brings the
+  dissolved spells back unchanged, so you can pick again straight away. The button disappears when the
+  cast is fired or cancelled.
 - The shot appears at the left edge of its lane and flies to the field.
   Lane 1 (top) is slowest (6.0 s), lane 5 (bottom) is fastest (2.63 s).
 
