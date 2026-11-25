@@ -26,7 +26,7 @@ import com.an0obis.magicduel.game.Projectile
 import com.an0obis.magicduel.game.Rules
 import com.an0obis.magicduel.game.Side
 import com.an0obis.magicduel.game.Tutorial
-import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.hypot
 import kotlin.math.max
@@ -683,7 +683,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         battle.board.forEachGlobe { _, _, g ->
             if (g.inFlight) {
                 // Still a projectile sliding through the row; it freezes into a globe when it stops.
-                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), g.headingRight, seed = g)
+                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), if (g.headingRight) 1f else -1f, 0f, g)
                 return@forEachGlobe
             }
             var scale = 1f
@@ -717,19 +717,30 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Draws the flying-projectile image with its head at ([x], [y]), pointing right (player shots)
-     * or mirrored to point left (enemy shots, or a backfire flying home).
+     * Draws the flying-projectile image with its head at ([x], [y]), travelling in the direction
+     * ([dx], [dy]): the image (head on the right, tail on the left) is mirrored and turned to face
+     * that way. No extra motion is added here — the only animation is the projectile's own loop,
+     * whose head is locked in place, so the head moves exactly as the caller moves it.
      */
-    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, headingRight: Boolean, scale: Float = 1f, seed: Any? = null) {
+    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, seed: Any?, alpha: Float = 1f) {
         val bmp = art.projectile(e, (SHOT_HEIGHT * u).toInt().coerceAtLeast(8), animFrame(seed))
-        val h = bmp.height * scale
-        val w = bmp.width * scale
+        val h = bmp.height.toFloat()
+        val w = bmp.width.toFloat()
         // The head sits at the right end of the image, about half its height in from the edge.
         val headInset = h * 0.5f
         c.save()
-        if (!headingRight) c.scale(-1f, 1f, x, y)
-        rect.set(x + headInset - w, y - h / 2f, x + headInset, y + h / 2f)
+        c.translate(x, y)
+        val degrees = if (dx < 0f) {
+            c.scale(-1f, 1f)
+            Math.toDegrees(atan2(dy.toDouble(), (-dx).toDouble())).toFloat()
+        } else {
+            Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        }
+        if (degrees != 0f) c.rotate(degrees)
+        rect.set(headInset - w, -h / 2f, headInset, h / 2f)
+        bitmapPaint.alpha = (255 * alpha.coerceIn(0f, 1f)).toInt()
         c.drawBitmap(bmp, null, rect, bitmapPaint)
+        bitmapPaint.alpha = 255
         c.restore()
     }
 
@@ -745,37 +756,34 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val sx = startX(p.owner)
             val ex = endX(p.owner)
             val laneY = laneY(p.lane)
-            val right = p.owner.fromLeft
+            val dir = if (p.owner.fromLeft) 1f else -1f
+            // Every path is a straight line travelled at constant speed; the projectile's own loop is
+            // its only animation (it fades in during the first moment, without moving or growing).
             when (p.state) {
                 Projectile.State.FLYING -> drawShot(
-                    c, p.element, sx + (ex - sx) * p.progress, laneY + sin(clock * 7f + p.lane) * 0.05f * u,
-                    right, min(1f, p.flown / 0.2f), p,
+                    c, p.element, sx + (ex - sx) * p.progress, laneY, dir, 0f, p, min(1f, p.flown / SHOT_FADE_IN),
                 )
-                Projectile.State.WAITING -> drawShot(
-                    c, p.element, ex, laneY + sin(clock * 9f) * 0.05f * u, right, 1f + 0.05f * sin(clock * 14f), p,
-                )
+                // The field is still moving: the shot holds at its edge until it can slide in.
+                Projectile.State.WAITING -> drawShot(c, p.element, ex, laneY, dir, 0f, p)
                 Projectile.State.BOUNCING -> {
-                    // Backfire: the shot turns around and flies home at its own caster.
+                    // Backfire: the shot turns around and flies straight at its own caster.
                     val target = chest(p.owner)
                     val t = p.bounceProgress
-                    val x = ex + (target.x - ex) * t
-                    val y = laneY + (target.y - laneY) * t - sin(t * PI.toFloat()) * 1.2f * u
-                    drawShot(c, p.element, x, y, !right, 0.9f, p)
+                    drawShot(
+                        c, p.element, ex + (target.x - ex) * t, laneY + (target.y - laneY) * t,
+                        target.x - ex, target.y - laneY, p,
+                    )
                 }
                 Projectile.State.EJECTED -> {
-                    // A crystal globe shoved off the far edge of a full row, arcing into the opponent.
+                    // A crystal globe shoved off the far edge of a full row flies straight at the opponent.
                     val target = chest(p.owner.opponent)
                     val from = cellX(if (p.owner.fromLeft) 4f else 0f)
                     val t = p.bounceProgress
                     val x = from + (target.x - from) * t
-                    val y = laneY + (target.y - laneY) * t - sin(t * PI.toFloat()) * 1.2f * u
-                    val g = (0.9f * u).toInt().coerceAtLeast(8)
-                    val half = g * (1f + 0.15f * sin(t * PI.toFloat())) / 2f
-                    c.save()
-                    c.rotate(t * 300f * (if (p.owner.fromLeft) 1f else -1f), x, y)
+                    val y = laneY + (target.y - laneY) * t
+                    val half = (0.9f * u).toInt().coerceAtLeast(8) / 2f
                     rect.set(x - half, y - half, x + half, y + half)
-                    c.drawBitmap(art.globe(p.element, g, animFrame(p)), null, rect, bitmapPaint)
-                    c.restore()
+                    c.drawBitmap(art.globe(p.element, (2 * half).toInt(), animFrame(p)), null, rect, bitmapPaint)
                 }
                 Projectile.State.DONE -> Unit
             }
@@ -1134,6 +1142,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** Height of a flying projectile image, in field cells. */
         const val SHOT_HEIGHT = 1.0f
+
+        /** A new shot fades in over this time (seconds) at the start of its lane. */
+        const val SHOT_FADE_IN = 0.15f
 
         /** Playback speed of the Midjourney loops: 24 frames at 10 fps ≈ a 2.4 s cycle. */
         const val ANIM_FPS = 10f

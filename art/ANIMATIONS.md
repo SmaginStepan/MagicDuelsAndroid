@@ -32,6 +32,18 @@ it). Projectiles mostly stayed in place; shadow still transformed mid-loop in al
 **Ping-pong** (shadow projectile): only the steady first 1.8 s were used — 13 frames forward
 (0, 0.15 … 1.8 s) then 11 back — so the loop is still seamless and never shows the transformation.
 
+## Projectiles: head locked, tail animated (2026-11-25)
+
+Midjourney moves the projectile's head around inside the video (fire up to 47 px on screen, the others
+4–17 px), which made shots look like they surged forward and back. `anim-sheets.ps1` now finds the head
+in every frame (its front edge and vertical centre) and shifts each frame so the head stays in one place
+(now under 1 px). In the game the head therefore moves exactly at the flight speed, in a straight line,
+while the tail keeps its own animation. The game adds no bobbing, pulsing or arcs; backfires and
+pushed-out globes fly in straight lines at constant speed too.
+
+Fire's loop (video 4e1733fd…, variation 0) drifts until its tail is cut off by the video edge, so fire
+now also uses the ping-pong of its steady first 1.8 s, like shadow.
+
 ## How they were made
 
 1. Open the chosen image on midjourney.com → **Animate image** → **Loop → Low motion**.
