@@ -1,0 +1,15 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+.kotlin
+/.playwright-mcp
+
+# Frames extracted from the Midjourney videos (rebuildable, see art/ANIMATIONS.md)
+/art/*/anim/*/frame_*.png

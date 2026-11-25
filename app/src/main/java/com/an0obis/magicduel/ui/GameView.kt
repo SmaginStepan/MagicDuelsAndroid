@@ -1,0 +1,852 @@
+package com.an0obis.magicduel.ui
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.DashPathEffect
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PointF
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.os.Build
+import android.view.Choreographer
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowInsets
+import com.an0obis.magicduel.game.AvatarKind
+import com.an0obis.magicduel.game.Battle
+import com.an0obis.magicduel.game.BattleEvent
+import com.an0obis.magicduel.game.Element
+import com.an0obis.magicduel.game.Opponents
+import com.an0obis.magicduel.game.Projectile
+import com.an0obis.magicduel.game.Rules
+import com.an0obis.magicduel.game.Side
+import kotlin.math.PI
+import kotlin.math.ceil
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.random.Random
+
+private object Pal {
+    val SKY_TOP = 0xFF0B0A24.toInt()
+    val SKY_BOTTOM = 0xFF2A1442.toInt()
+    val PANEL = 0xE6130E2A.toInt()
+    val PANEL_EDGE = 0xFF3E3170.toInt()
+    val TILE = 0xFF231B42.toInt()
+    val TILE_EMPTY = 0x991A1433.toInt()
+    val CARD = 0xFF1A1236.toInt()
+    val TEXT = 0xFFEDE7FF.toInt()
+    val TEXT_DIM = 0xFF9C92C8.toInt()
+    val PLAYER_HP = 0xFF39D3B0.toInt()
+    val ENEMY_HP = 0xFFFF5A6E.toInt()
+    val DAMAGE = 0xFFFF8A96.toInt()
+    val HP_BACK = 0xFF2A2045.toInt()
+    val HP_TRAIL = 0xFFFFF1C9.toInt()
+    val PLAYER_ROBE = 0xFF2F6FD0.toInt()
+}
+
+/**
+ * The whole game screen: draws the duel, runs the frame loop and turns taps into casts.
+ * Layout is portrait and scales from one unit [u] (the size of a field cell).
+ */
+@SuppressLint("ViewConstructor")
+class GameView(context: Context) : View(context), Choreographer.FrameCallback {
+
+    private class HitGroup(val target: Side, val damage: Int) {
+        var landed = false
+    }
+
+    private class Spark(
+        val x0: Float, val y0: Float, val cx: Float, val cy: Float, val x1: Float, val y1: Float,
+        val color: Int, val delay: Float, val duration: Float, val hit: HitGroup?,
+    ) {
+        var t = 0f
+    }
+
+    private class FloatText(val text: String, val x: Float, val y: Float, val color: Int, val size: Float, val duration: Float = 1.1f) {
+        var t = 0f
+    }
+
+    private class Ring(val x: Float, val y: Float, val color: Int, val r0: Float, val r1: Float, val duration: Float) {
+        var t = 0f
+    }
+
+    private class Bolt(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val color: Int) {
+        var t = 0f
+    }
+
+    private val prefs = context.getSharedPreferences("magic_duel", Context.MODE_PRIVATE)
+    private var level = prefs.getInt(KEY_LEVEL, 0).coerceAtLeast(0)
+    private var battle = Battle(Opponents.forLevel(level))
+    private val art = Art(context.resources, context.packageName)
+
+    private var running = false
+    private var lastFrameNanos = 0L
+    private var clock = 0f
+    private var endTimer = 0f
+
+    // ---- layout, in pixels ----
+    private var u = 1f
+    private var left = 0f
+    private var right = 0f
+    private var fieldLeft = 0f
+    private var fieldTop = 0f
+    private var enemyTop = 0f
+    private var gridLeft = 0f
+    private var gridTop = 0f
+    private var tile = 0f
+    private var tileGap = 0f
+    private var playerTop = 0f
+    private var playerX = 0f
+    private var playerFoot = 0f
+    private var playerH = 0f
+    private var enemyX = 0f
+    private var enemyFoot = 0f
+    private var enemyH = 0f
+    private var safeTop = 0
+    private var safeBottom = 0
+
+    // ---- effects ----
+    private val sparks = ArrayList<Spark>()
+    private val texts = ArrayList<FloatText>()
+    private val rings = ArrayList<Ring>()
+    private val bolts = ArrayList<Bolt>()
+    private val flash = FloatArray(2)
+    private val shake = FloatArray(2)
+    private val shownHp = FloatArray(2)
+    private val trailHp = FloatArray(2)
+    private val afterglow = FloatArray(2)
+    private val lastCastColor = IntArray(2)
+    private val tilePop = Array(Rules.GRID_ROWS) { FloatArray(Rules.GRID_COLS) { 1f } }
+    private var tappedRow = -1
+    private var tappedCol = -1
+    // ---- paints ----
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val dashed = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD) }
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val sky = Paint()
+    private val rect = RectF()
+    private val path = Path()
+    private val stars = FloatArray(STAR_COUNT * 3)
+
+    init {
+        val r = Random(7)
+        for (i in stars.indices) stars[i] = r.nextFloat()
+        resetEffects()
+    }
+
+    // ================================================================ lifecycle and loop
+
+    fun resume() {
+        if (running) return
+        running = true
+        lastFrameNanos = 0L
+        Choreographer.getInstance().postFrameCallback(this)
+    }
+
+    fun pause() {
+        running = false
+        Choreographer.getInstance().removeFrameCallback(this)
+    }
+
+    override fun doFrame(frameTimeNanos: Long) {
+        if (!running) return
+        val dt = if (lastFrameNanos == 0L) 0f else ((frameTimeNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+        lastFrameNanos = frameTimeNanos
+        step(dt)
+        invalidate()
+        Choreographer.getInstance().postFrameCallback(this)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        requestApplyInsets()
+    }
+
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        if (Build.VERSION.SDK_INT >= 30) {
+            val cut = insets.getInsets(WindowInsets.Type.displayCutout())
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars())
+            safeTop = max(cut.top, bars.top)
+            safeBottom = max(cut.bottom, bars.bottom)
+        } else if (Build.VERSION.SDK_INT >= 28) {
+            safeTop = insets.displayCutout?.safeInsetTop ?: 0
+            safeBottom = insets.displayCutout?.safeInsetBottom ?: 0
+        }
+        if (width > 0) layoutFor(width, height)
+        return insets
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        layoutFor(w, h)
+    }
+
+    private fun layoutFor(w: Int, h: Int) {
+        val availH = (h - safeTop - safeBottom).toFloat()
+        val contentUnits = 5f + 2f * FLIGHT_ZONE
+        u = min(w / contentUnits, availH / 16f)
+        val contentW = u * contentUnits
+        left = (w - contentW) / 2f
+        right = left + contentW
+        fieldLeft = left + FLIGHT_ZONE * u
+        enemyTop = safeTop + 0.3f * u
+
+        tile = 1.19f * u
+        tileGap = 0.15f * u
+        val gridH = 5 * tile + 4 * tileGap
+        val gridW = 3 * tile + 2 * tileGap
+        gridTop = h - safeBottom - 0.4f * u - gridH
+        gridLeft = right - 0.3f * u - gridW
+        playerTop = gridTop - 0.95f * u
+
+        val enemyBottom = enemyTop + 2.45f * u
+        fieldTop = (enemyBottom + playerTop) / 2f - 2.5f * u
+
+        playerH = 3.7f * u
+        playerX = left + (gridLeft - 0.7f * u - left) / 2f
+        playerFoot = gridTop + gridH - 0.15f * u
+        enemyH = 2.15f * u
+        enemyX = right - 1.2f * u
+        enemyFoot = enemyTop + 2.35f * u
+
+        dashed.pathEffect = DashPathEffect(floatArrayOf(0.12f * u, 0.14f * u), 0f)
+        sky.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), Pal.SKY_TOP, Pal.SKY_BOTTOM, Shader.TileMode.CLAMP)
+        text.setShadowLayer(0.08f * u, 0f, 0.03f * u, BLACK)
+    }
+
+    private fun resetEffects() {
+        sparks.clear(); texts.clear(); rings.clear(); bolts.clear()
+        endTimer = 0f
+        tappedRow = -1
+        tappedCol = -1
+        for (side in Side.entries) {
+            val i = side.ordinal
+            shownHp[i] = battle.caster(side).maxHp.toFloat()
+            trailHp[i] = shownHp[i]
+            flash[i] = 0f
+            shake[i] = 0f
+            afterglow[i] = 0f
+        }
+        tilePop.forEach { it.fill(1f) }
+    }
+
+    private fun nextBattle() {
+        if (battle.winner == Side.PLAYER) level++
+        prefs.edit().putInt(KEY_LEVEL, level).apply()
+        battle = Battle(Opponents.forLevel(level))
+        resetEffects()
+    }
+
+    // ================================================================ simulation step
+
+    private fun step(dt: Float) {
+        clock += dt
+        battle.update(dt)
+        for (event in battle.drainEvents()) onEvent(event)
+
+        val it = sparks.iterator()
+        while (it.hasNext()) {
+            val s = it.next()
+            s.t += dt
+            if (s.t >= s.delay + s.duration) {
+                s.hit?.let { group ->
+                    if (!group.landed) {
+                        group.landed = true
+                        onHit(group.target, group.damage)
+                    }
+                }
+                it.remove()
+            }
+        }
+        texts.removeAll { t -> t.t += dt; t.t >= t.duration }
+        rings.removeAll { r -> r.t += dt; r.t >= r.duration }
+        bolts.removeAll { b -> b.t += dt; b.t >= BOLT_TIME }
+        for (i in 0..1) {
+            flash[i] = max(0f, flash[i] - dt * 3f)
+            shake[i] = max(0f, shake[i] - dt * 3.5f)
+            afterglow[i] = max(0f, afterglow[i] - dt * 3f)
+        }
+        for (row in tilePop) for (c in row.indices) row[c] = min(1f, row[c] + dt * 4f)
+
+        for (side in Side.entries) {
+            val i = side.ordinal
+            val hp = battle.caster(side).hp.toFloat()
+            if (sparks.none { s -> s.hit?.target == side }) shownHp[i] = min(shownHp[i], hp)
+            trailHp[i] = if (trailHp[i] > shownHp[i]) {
+                max(shownHp[i], trailHp[i] - dt * max(25f, (trailHp[i] - shownHp[i]) * 2.5f))
+            } else {
+                shownHp[i]
+            }
+        }
+        if (battle.winner != null && sparks.isEmpty()) endTimer += dt
+    }
+
+    private fun onEvent(e: BattleEvent) {
+        when (e) {
+            is BattleEvent.CastStarted -> Unit
+            is BattleEvent.Launched -> {
+                val from = staffTip(e.side)
+                bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
+                afterglow[e.side.ordinal] = 1f
+                lastCastColor[e.side.ordinal] = art.color(e.element)
+            }
+            is BattleEvent.Landed -> rings += Ring(
+                cellX(e.col.toFloat()), cellY(e.row.toFloat()),
+                mix(art.color(e.element), WHITE, 0.65f), 0.25f * u, 0.8f * u, 0.35f,
+            )
+            is BattleEvent.Backfired -> texts += FloatText("Backfire!", endX(e.side), laneY(e.lane) - 0.45f * u, Pal.ENEMY_HP, 0.38f * u, 0.9f)
+            is BattleEvent.BackfireHit -> onHit(e.side, e.damage)
+            is BattleEvent.Matched -> spawnMatch(e)
+            is BattleEvent.SpellsRefilled -> e.cells.forEach { tilePop[it.row][it.col] = 0f }
+            is BattleEvent.PushedOut -> texts += FloatText(
+                "Pushed out!", cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
+            )
+            is BattleEvent.PushOutHit -> onHit(e.target, e.damage)
+            is BattleEvent.GameOver -> Unit
+        }
+    }
+
+    private fun spawnMatch(e: BattleEvent.Matched) {
+        val target = chest(e.target)
+        val group = HitGroup(e.target, e.damage)
+        e.cells.forEachIndexed { i, cell ->
+            val x = cellX(cell.col.toFloat())
+            val y = cellY(cell.row.toFloat())
+            val col = art.color(e.elements[i])
+            rings += Ring(x, y, col, 0.2f * u, 0.9f * u, 0.4f)
+            val dx = target.x - x
+            val dy = target.y - y
+            val len = max(1f, hypot(dx, dy))
+            repeat(2) { k ->
+                val bend = (if ((i + k) % 2 == 0) 1f else -1f) * (1.2f + Random.nextFloat()) * u
+                val mx = (x + target.x) / 2f - dy / len * bend
+                val my = (y + target.y) / 2f + dx / len * bend
+                val delay = Rules.POP_TIME * 0.6f + i * 0.03f + k * 0.05f
+                sparks += Spark(x, y, mx, my, target.x, target.y, col, delay, 0.55f + Random.nextFloat() * 0.15f, group)
+            }
+        }
+        if (e.chain >= 2) {
+            texts += FloatText("Chain ×${e.chain}!", fieldLeft + 2.5f * u, fieldTop + 2.3f * u, GOLD, 0.6f * u, 1.2f)
+        }
+    }
+
+    private fun onHit(side: Side, damage: Int) {
+        val i = side.ordinal
+        shownHp[i] = max(battle.caster(side).hp.toFloat(), shownHp[i] - damage)
+        flash[i] = 1f
+        shake[i] = 1f
+        val h = if (side == Side.PLAYER) playerH else enemyH
+        val c = chest(side)
+        texts += FloatText("-$damage", c.x, c.y - h * 0.45f, if (side == Side.PLAYER) Pal.DAMAGE else GOLD, 0.6f * u)
+        if (side == Side.PLAYER) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    // ================================================================ input
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_POINTER_DOWN) return true
+        val x = event.getX(event.actionIndex)
+        val y = event.getY(event.actionIndex)
+        if (battle.winner != null) {
+            if (endTimer > TAP_DELAY) nextBattle()
+            return true
+        }
+        if (x < gridLeft || y < gridTop) return true
+        val stepSize = tile + tileGap
+        val col = ((x - gridLeft) / stepSize).toInt()
+        val row = ((y - gridTop) / stepSize).toInt()
+        if (row !in 0 until Rules.GRID_ROWS || col !in 0 until Rules.GRID_COLS) return true
+        if (battle.tryCast(row, col)) {
+            tappedRow = row
+            tappedCol = col
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        }
+        return true
+    }
+
+    // ================================================================ geometry
+
+    private fun cellX(col: Float) = fieldLeft + (col + 0.5f) * u
+    private fun cellY(row: Float) = fieldTop + (row + 0.5f) * u
+    private fun laneY(lane: Int) = cellY(lane.toFloat())
+    private fun startX(side: Side) = if (side == Side.PLAYER) left + 0.5f * u else right - 0.5f * u
+    /** Where a shot reaches the field: one cell outside the edge, where it starts sliding in. */
+    private fun endX(side: Side) = if (side == Side.PLAYER) fieldLeft - 0.5f * u else fieldLeft + 5.5f * u
+    private fun chest(side: Side) =
+        if (side == Side.PLAYER) PointF(playerX, playerFoot - playerH * 0.5f) else PointF(enemyX, enemyFoot - enemyH * 0.5f)
+
+    private fun staffTip(side: Side): PointF =
+        if (side == Side.PLAYER) art.mageOrb(playerX, playerFoot, playerH, true, 1f)
+        else art.mageOrb(enemyX, enemyFoot, enemyH, false, 1f)
+
+    // ================================================================ drawing
+
+    override fun onDraw(c: Canvas) {
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), sky)
+        drawStars(c)
+        drawEnemyPanel(c)
+        drawEnemyAvatar(c)
+        drawField(c)
+        drawGlobes(c)
+        drawRings(c)
+        drawProjectiles(c)
+        drawPlayerPanel(c)
+        drawPlayerAvatar(c)
+        drawSpellGrid(c)
+        drawBolts(c)
+        drawSparks(c)
+        drawTexts(c)
+        drawBanner(c)
+        drawEndOverlay(c)
+    }
+
+    private fun label(c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int, align: Paint.Align, alpha: Float = 1f) {
+        text.textSize = size
+        text.color = withAlpha(color, (255 * alpha.coerceIn(0f, 1f)).toInt())
+        text.textAlign = align
+        c.drawText(s, x, y, text)
+    }
+
+    private fun drawStars(c: Canvas) {
+        for (i in 0 until STAR_COUNT) {
+            val x = stars[i * 3] * width
+            val y = stars[i * 3 + 1] * height
+            val k = stars[i * 3 + 2]
+            val twinkle = 0.5f + 0.5f * sin(clock * (1f + k * 2f) + k * 20f)
+            fill.color = withAlpha(WHITE, (30 + 110 * k * twinkle).toInt())
+            c.drawCircle(x, y, (0.015f + 0.03f * k) * u, fill)
+        }
+    }
+
+    private fun drawHpBar(c: Canvas, x: Float, y: Float, w: Float, h: Float, side: Side, color: Int) {
+        val full = battle.caster(side).maxHp.toFloat()
+        val i = side.ordinal
+        val r = h / 2f
+        rect.set(x, y, x + w, y + h)
+        fill.color = Pal.HP_BACK
+        c.drawRoundRect(rect, r, r, fill)
+        if (trailHp[i] > 0f) {
+            rect.set(x, y, x + w * (trailHp[i] / full), y + h)
+            fill.color = Pal.HP_TRAIL
+            c.drawRoundRect(rect, r, r, fill)
+        }
+        if (shownHp[i] > 0f) {
+            rect.set(x, y, x + w * (shownHp[i] / full), y + h)
+            fill.color = mix(color, WHITE, flash[i] * 0.5f)
+            c.drawRoundRect(rect, r, r, fill)
+        }
+        rect.set(x, y, x + w, y + h)
+        stroke.color = withAlpha(WHITE, 60)
+        stroke.strokeWidth = 0.03f * u
+        c.drawRoundRect(rect, r, r, stroke)
+    }
+
+    private fun drawEnemyPanel(c: Canvas) {
+        val x = left + 0.35f * u
+        val w = min(5f * u, enemyX - 1.5f * u - x)
+        // Long titles ("Grand Archmage …") shrink so they never run into the HP number.
+        val hpText = "${ceil(shownHp[Side.ENEMY.ordinal]).toInt()}"
+        text.textSize = 0.3f * u
+        val hpWidth = text.measureText(hpText)
+        text.textSize = 0.38f * u
+        val nameWidth = text.measureText(battle.opponent.name)
+        val room = w - hpWidth - 0.25f * u
+        val nameSize = if (nameWidth > room) 0.38f * u * room / nameWidth else 0.38f * u
+        label(c, battle.opponent.name, x, enemyTop + 0.42f * u, nameSize, Pal.TEXT, Paint.Align.LEFT)
+        label(c, hpText, x + w, enemyTop + 0.42f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+        drawHpBar(c, x, enemyTop + 0.56f * u, w, 0.26f * u, Side.ENEMY, Pal.ENEMY_HP)
+
+        val chipsTop = enemyTop + 1.08f * u
+        if (battle.botShots.isEmpty()) {
+            label(c, "Training dummy: doesn't fire back", x, chipsTop + 0.42f * u, 0.27f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
+            return
+        }
+        val chip = 0.74f * u
+        val gap = 0.14f * u
+        val rr = 0.14f * u
+        battle.botShots.forEachIndexed { i, shot ->
+            val cx = x + i * (chip + gap)
+            val next = i == battle.botIndex
+            val col = art.color(shot.element)
+            rect.set(cx, chipsTop, cx + chip, chipsTop + chip)
+            bitmapPaint.alpha = if (next) 255 else 170
+            c.drawBitmap(art.button(shot.element, chip.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
+            bitmapPaint.alpha = 255
+            if (next) {
+                stroke.strokeWidth = 0.06f * u
+                stroke.color = col
+                c.drawRoundRect(rect, rr, rr, stroke)
+            }
+            label(c, "${shot.lane + 1}", cx + chip - 0.1f * u, chipsTop + chip - 0.08f * u, 0.26f * u, WHITE, Paint.Align.RIGHT)
+            if (next && battle.enemy.isCasting) {
+                rect.set(cx - 0.06f * u, chipsTop - 0.06f * u, cx + chip + 0.06f * u, chipsTop + chip + 0.06f * u)
+                stroke.color = WHITE
+                stroke.strokeWidth = 0.05f * u
+                c.drawArc(rect, -90f, 360f * battle.enemy.castProgress, false, stroke)
+            }
+        }
+    }
+
+    private fun drawEnemyAvatar(c: Canvas) {
+        val lost = battle.winner == Side.PLAYER
+        val k = if (lost) smooth01(endTimer / 0.8f) else 0f
+        val x = enemyX + sin(clock * 55f) * shake[1] * 0.08f * u
+        if (battle.opponent.kind == AvatarKind.DUMMY) {
+            val wobble = sin(clock * 18f) * shake[1] * 14f
+            art.drawDummy(c, x, enemyFoot, enemyH, wobble, flash[1], DEFEAT_TILT * k, 1f - 0.6f * k)
+        } else {
+            val e = battle.enemy
+            val castColor = e.castElement?.let(art::color) ?: if (afterglow[1] > 0f) lastCastColor[1] else null
+            val cast = if (e.isCasting) e.castProgress else afterglow[1]
+            art.drawMage(c, x, enemyFoot, enemyH, false, battle.opponent.robeColor, true, castColor, cast, clock, flash[1], DEFEAT_TILT * k, 1f - 0.6f * k)
+        }
+    }
+
+    private fun drawField(c: Canvas) {
+        val fr = fieldLeft + 5f * u
+        val fb = fieldTop + 5f * u
+        dashed.color = withAlpha(WHITE, 34)
+        dashed.strokeWidth = 0.035f * u
+        for (lane in 0 until Rules.ROWS) {
+            val y = laneY(lane)
+            c.drawLine(left + 0.55f * u, y, fieldLeft - 0.2f * u, y, dashed)
+            c.drawLine(fr + 0.2f * u, y, right - 0.55f * u, y, dashed)
+            label(c, "${lane + 1}", left + 0.2f * u, y + 0.1f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+            label(c, "${lane + 1}", right - 0.2f * u, y + 0.1f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+        }
+        // Telegraph: the lane a caster is aiming at lights up.
+        for (side in Side.entries) {
+            val caster = battle.caster(side)
+            val element = caster.castElement ?: continue
+            val y = laneY(caster.castLane)
+            val col = art.color(element)
+            val pulse = 0.5f + 0.5f * sin(clock * 10f)
+            val x0 = if (side == Side.PLAYER) left + 0.4f * u else fr + 0.14f * u
+            val x1 = if (side == Side.PLAYER) fieldLeft - 0.14f * u else right - 0.4f * u
+            rect.set(x0, y - 0.4f * u, x1, y + 0.4f * u)
+            fill.color = withAlpha(col, (25 + 50 * caster.castProgress * pulse).toInt())
+            c.drawRoundRect(rect, 0.2f * u, 0.2f * u, fill)
+            drawChevrons(c, (x0 + x1) / 2f, y, side == Side.PLAYER, col, caster.castProgress)
+        }
+        rect.set(fieldLeft - 0.14f * u, fieldTop - 0.14f * u, fr + 0.14f * u, fb + 0.14f * u)
+        fill.color = Pal.PANEL
+        c.drawRoundRect(rect, 0.3f * u, 0.3f * u, fill)
+        stroke.color = Pal.PANEL_EDGE
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
+        fill.color = withAlpha(WHITE, 12)
+        for (r in 0 until Rules.ROWS) for (col in 0 until Rules.COLS) {
+            c.drawCircle(cellX(col.toFloat()), cellY(r.toFloat()), 0.36f * u, fill)
+        }
+    }
+
+    private fun drawChevrons(c: Canvas, cx: Float, cy: Float, pointRight: Boolean, color: Int, k: Float) {
+        val d = if (pointRight) 1f else -1f
+        val spacing = 0.3f * u
+        val drift = ((clock * 1.5f) % 1f) * spacing
+        stroke.color = withAlpha(color, (120 + 135 * k).toInt())
+        stroke.strokeWidth = 0.06f * u
+        for (i in -1..1) {
+            val x = cx + (i * spacing + drift - spacing / 2f) * d
+            path.reset()
+            path.moveTo(x - 0.1f * u * d, cy - 0.16f * u)
+            path.lineTo(x + 0.06f * u * d, cy)
+            path.lineTo(x - 0.1f * u * d, cy + 0.16f * u)
+            c.drawPath(path, stroke)
+        }
+    }
+
+    private fun drawGlobes(c: Canvas) {
+        val size = (0.9f * u).toInt().coerceAtLeast(8)
+        val popping = battle.phase == Battle.Phase.POP
+        battle.board.forEachGlobe { _, _, g ->
+            if (g.inFlight) {
+                // Still a projectile sliding through the row; it freezes into a globe when it stops.
+                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), g.headingRight, seed = g)
+                return@forEachGlobe
+            }
+            var scale = 1f
+            var alpha = 255
+            if (g.popping && popping) {
+                val p = battle.phaseProgress
+                scale = 1f + 0.45f * p
+                alpha = (255 * (1f - p)).toInt()
+            }
+            val x = cellX(g.drawCol)
+            val y = cellY(g.drawRow)
+            val half = size * scale / 2f
+            rect.set(x - half, y - half, x + half, y + half)
+            bitmapPaint.alpha = alpha
+            c.drawBitmap(art.globe(g.element, size, animFrame(g)), null, rect, bitmapPaint)
+            if (g.freeze > 0f) {
+                fill.color = withAlpha(0xFFE8F6FF.toInt(), (190 * g.freeze).toInt())
+                c.drawCircle(x, y, half * 0.9f, fill)
+            }
+        }
+        bitmapPaint.alpha = 255
+    }
+
+    private fun drawRings(c: Canvas) {
+        for (r in rings) {
+            val k = r.t / r.duration
+            stroke.color = withAlpha(r.color, (220 * (1f - k)).toInt())
+            stroke.strokeWidth = 0.07f * u * (1f - k) + 0.01f * u
+            c.drawCircle(r.x, r.y, r.r0 + (r.r1 - r.r0) * easeOut(k), stroke)
+        }
+    }
+
+    /**
+     * Draws the flying-projectile image with its head at ([x], [y]), pointing right (player shots)
+     * or mirrored to point left (enemy shots, or a backfire flying home).
+     */
+    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, headingRight: Boolean, scale: Float = 1f, seed: Any? = null) {
+        val bmp = art.projectile(e, (SHOT_HEIGHT * u).toInt().coerceAtLeast(8), animFrame(seed))
+        val h = bmp.height * scale
+        val w = bmp.width * scale
+        // The head sits at the right end of the image, about half its height in from the edge.
+        val headInset = h * 0.5f
+        c.save()
+        if (!headingRight) c.scale(-1f, 1f, x, y)
+        rect.set(x + headInset - w, y - h / 2f, x + headInset, y + h / 2f)
+        c.drawBitmap(bmp, null, rect, bitmapPaint)
+        c.restore()
+    }
+
+    /**
+     * The current frame of a looping Midjourney animation. Each object ([seed]) starts at its own
+     * point in the loop, so neighbouring globes don't flicker in sync.
+     */
+    private fun animFrame(seed: Any?): Int =
+        (clock * ANIM_FPS).toInt() + (if (seed == null) 0 else System.identityHashCode(seed) % (Art.ANIM_COLS * Art.ANIM_ROWS))
+
+    private fun drawProjectiles(c: Canvas) {
+        for (p in battle.projectiles) {
+            val sx = startX(p.owner)
+            val ex = endX(p.owner)
+            val laneY = laneY(p.lane)
+            val right = p.owner.fromLeft
+            when (p.state) {
+                Projectile.State.FLYING -> drawShot(
+                    c, p.element, sx + (ex - sx) * p.progress, laneY + sin(clock * 7f + p.lane) * 0.05f * u,
+                    right, min(1f, p.flown / 0.2f), p,
+                )
+                Projectile.State.WAITING -> drawShot(
+                    c, p.element, ex, laneY + sin(clock * 9f) * 0.05f * u, right, 1f + 0.05f * sin(clock * 14f), p,
+                )
+                Projectile.State.BOUNCING -> {
+                    // Backfire: the shot turns around and flies home at its own caster.
+                    val target = chest(p.owner)
+                    val t = p.bounceProgress
+                    val x = ex + (target.x - ex) * t
+                    val y = laneY + (target.y - laneY) * t - sin(t * PI.toFloat()) * 1.2f * u
+                    drawShot(c, p.element, x, y, !right, 0.9f, p)
+                }
+                Projectile.State.EJECTED -> {
+                    // A crystal globe shoved off the far edge of a full row, arcing into the opponent.
+                    val target = chest(p.owner.opponent)
+                    val from = cellX(if (p.owner.fromLeft) 4f else 0f)
+                    val t = p.bounceProgress
+                    val x = from + (target.x - from) * t
+                    val y = laneY + (target.y - laneY) * t - sin(t * PI.toFloat()) * 1.2f * u
+                    val g = (0.9f * u).toInt().coerceAtLeast(8)
+                    val half = g * (1f + 0.15f * sin(t * PI.toFloat())) / 2f
+                    c.save()
+                    c.rotate(t * 300f * (if (p.owner.fromLeft) 1f else -1f), x, y)
+                    rect.set(x - half, y - half, x + half, y + half)
+                    c.drawBitmap(art.globe(p.element, g, animFrame(p)), null, rect, bitmapPaint)
+                    c.restore()
+                }
+                Projectile.State.DONE -> Unit
+            }
+        }
+    }
+
+    private fun drawPlayerPanel(c: Canvas) {
+        val x = left + 0.35f * u
+        val w = gridLeft - 0.9f * u - x
+        label(c, "You", x, playerTop + 0.32f * u, 0.38f * u, Pal.TEXT, Paint.Align.LEFT)
+        label(c, "${ceil(shownHp[Side.PLAYER.ordinal]).toInt()}", x + w, playerTop + 0.32f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+        drawHpBar(c, x, playerTop + 0.46f * u, w, 0.26f * u, Side.PLAYER, Pal.PLAYER_HP)
+        label(c, "Level ${level + 1}", right - 0.35f * u, playerTop + 0.32f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+    }
+
+    private fun drawPlayerAvatar(c: Canvas) {
+        val lost = battle.winner == Side.ENEMY
+        val k = if (lost) smooth01(endTimer / 0.8f) else 0f
+        val p = battle.player
+        val castColor = p.castElement?.let(art::color) ?: if (afterglow[0] > 0f) lastCastColor[0] else null
+        val cast = if (p.isCasting) p.castProgress else afterglow[0]
+        val x = playerX + sin(clock * 55f) * shake[0] * 0.08f * u
+        art.drawMage(c, x, playerFoot, playerH, true, Pal.PLAYER_ROBE, false, castColor, cast, clock, flash[0], DEFEAT_TILT * k, 1f - 0.6f * k)
+    }
+
+    private fun drawSpellGrid(c: Canvas) {
+        val spells = battle.spells
+        val caster = battle.player
+        val locked = caster.isCasting || !battle.started || battle.winner != null
+        val rr = 0.2f * u
+        for (r in 0 until spells.rows) {
+            val y0 = gridTop + r * (tile + tileGap)
+            val cy = y0 + tile / 2f
+            val bx = gridLeft - 0.36f * u
+            fill.color = Pal.TILE
+            c.drawCircle(bx, cy, 0.24f * u, fill)
+            label(c, "${r + 1}", bx, cy + 0.1f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+            for (col in 0 until spells.cols) {
+                val x0 = gridLeft + col * (tile + tileGap)
+                rect.set(x0, y0, x0 + tile, y0 + tile)
+                if (!spells.isAvailable(r, col)) {
+                    fill.color = Pal.TILE_EMPTY
+                    c.drawRoundRect(rect, rr, rr, fill)
+                    val p = caster.castProgress
+                    fill.color = withAlpha(WHITE, (30 + 70 * p).toInt())
+                    c.drawCircle(rect.centerX(), rect.centerY(), 0.05f * u + 0.1f * u * p, fill)
+                    continue
+                }
+                val element = spells[r, col]
+                val pop = tilePop[r][col]
+                val scale = if (pop < 1f) easeOutBack(pop) else 1f
+                c.save()
+                c.scale(scale, scale, rect.centerX(), rect.centerY())
+                bitmapPaint.alpha = if (locked) 130 else 255
+                c.drawBitmap(art.button(element, tile.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
+                bitmapPaint.alpha = 255
+                c.restore()
+            }
+        }
+        // The spell being cast shrinks inside its tile while a progress ring fills around it.
+        val element = caster.castElement
+        if (element != null && tappedRow >= 0) {
+            val x0 = gridLeft + tappedCol * (tile + tileGap)
+            val y0 = gridTop + tappedRow * (tile + tileGap)
+            val col = art.color(element)
+            val p = caster.castProgress
+            rect.set(x0 + 0.08f * u, y0 + 0.08f * u, x0 + tile - 0.08f * u, y0 + tile - 0.08f * u)
+            val k = 1f - 0.35f * p
+            val half = rect.width() * k / 2f
+            val cx = rect.centerX()
+            val cy = rect.centerY()
+            bitmapPaint.alpha = 230
+            c.drawBitmap(art.button(element, tile.toInt().coerceAtLeast(8)), null, RectF(cx - half, cy - half, cx + half, cy + half), bitmapPaint)
+            bitmapPaint.alpha = 255
+            stroke.color = col
+            stroke.strokeWidth = 0.08f * u
+            c.drawArc(rect, -90f, 360f * p, false, stroke)
+        }
+    }
+
+    private fun drawBolts(c: Canvas) {
+        for (b in bolts) {
+            val t = (b.t / BOLT_TIME).coerceIn(0f, 1f)
+            val tail = max(0f, t - 0.45f)
+            val hx = b.x0 + (b.x1 - b.x0) * t
+            val hy = b.y0 + (b.y1 - b.y0) * t
+            val tx = b.x0 + (b.x1 - b.x0) * tail
+            val ty = b.y0 + (b.y1 - b.y0) * tail
+            stroke.color = withAlpha(b.color, 200)
+            stroke.strokeWidth = 0.14f * u
+            c.drawLine(tx, ty, hx, hy, stroke)
+            stroke.color = withAlpha(WHITE, 230)
+            stroke.strokeWidth = 0.05f * u
+            c.drawLine(tx, ty, hx, hy, stroke)
+        }
+    }
+
+    private fun drawSparks(c: Canvas) {
+        for (s in sparks) {
+            if (s.t < s.delay) continue
+            val t = ((s.t - s.delay) / s.duration).coerceIn(0f, 1f)
+            val e = t * t
+            val a = 1f - e
+            val x = a * a * s.x0 + 2f * a * e * s.cx + e * e * s.x1
+            val y = a * a * s.y0 + 2f * a * e * s.cy + e * e * s.y1
+            fill.color = withAlpha(s.color, 90)
+            c.drawCircle(x, y, 0.2f * u, fill)
+            fill.color = mix(s.color, WHITE, 0.5f)
+            c.drawCircle(x, y, 0.08f * u, fill)
+        }
+    }
+
+    private fun drawTexts(c: Canvas) {
+        for (t in texts) {
+            val k = t.t / t.duration
+            // Stay fully visible, then fade out over the last 40 %.
+            val alpha = 1f - smooth01((k - 0.6f) / 0.4f)
+            label(c, t.text, t.x, t.y - 0.9f * u * k, t.size * (1f + 0.15f * (1f - k)), t.color, Paint.Align.CENTER, alpha)
+        }
+    }
+
+    private fun drawBanner(c: Canvas) {
+        val t = battle.time
+        val intro = battle.introTime
+        if (t > intro + 0.5f) return
+        val a = if (t < intro) 1f else 1f - (t - intro) / 0.5f
+        val cx = fieldLeft + 2.5f * u
+        val cy = fieldTop + 2.5f * u
+        rect.set(left + 0.4f * u, cy - 1.1f * u, right - 0.4f * u, cy + 1.0f * u)
+        fill.color = withAlpha(0xFF0B0820.toInt(), (215 * a).toInt())
+        c.drawRoundRect(rect, 0.3f * u, 0.3f * u, fill)
+        label(c, battle.opponent.name, cx, cy - 0.15f * u, 0.62f * u, GOLD, Paint.Align.CENTER, a)
+        label(c, if (t < intro * 0.6f) "Get ready" else "Duel!", cx, cy + 0.62f * u, 0.42f * u, Pal.TEXT, Paint.Align.CENTER, a)
+    }
+
+    private fun drawEndOverlay(c: Canvas) {
+        val winner = battle.winner ?: return
+        val k = smooth01((endTimer - 0.7f) / 0.5f)
+        if (k <= 0f) return
+        fill.color = withAlpha(BLACK, (150 * k).toInt())
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+        val cx = width / 2f
+        val cy = fieldTop + 2.5f * u
+        rect.set(left + 0.6f * u, cy - 1.6f * u, right - 0.6f * u, cy + 1.6f * u)
+        fill.color = withAlpha(Pal.CARD, (240 * k).toInt())
+        c.drawRoundRect(rect, 0.35f * u, 0.35f * u, fill)
+        stroke.color = withAlpha(GOLD, (200 * k).toInt())
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(rect, 0.35f * u, 0.35f * u, stroke)
+        val won = winner == Side.PLAYER
+        label(c, if (won) "Victory!" else "Defeated", cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
+        val subtitle = when {
+            won -> "Next: ${Opponents.forLevel(level + 1).name}"
+            else -> "${battle.opponent.name} wins this time"
+        }
+        label(c, subtitle, cx, cy + 0.35f * u, 0.36f * u, Pal.TEXT, Paint.Align.CENTER, k)
+        if (endTimer > TAP_DELAY) {
+            label(c, "Tap to continue", cx, cy + 1.05f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER, k * (0.6f + 0.4f * sin(clock * 4f)))
+        }
+    }
+
+    private companion object {
+        const val KEY_LEVEL = "level"
+        const val STAR_COUNT = 70
+        const val BOLT_TIME = 0.22f
+        const val TAP_DELAY = 1.5f
+        const val DEFEAT_TILT = 32f
+
+        /** Height of a flying projectile image, in field cells. */
+        const val SHOT_HEIGHT = 1.0f
+
+        /** Playback speed of the Midjourney loops: 24 frames at 10 fps ≈ a 2.4 s cycle. */
+        const val ANIM_FPS = 10f
+
+        /**
+         * Width of each side flight zone in field cells. Shots fly from 0.5 cells inside the
+         * screen edge to 0.5 cells before the field, so the flight path is FLIGHT_ZONE - 1 cells.
+         */
+        const val FLIGHT_ZONE = 2.375f
+    }
+}
