@@ -798,23 +798,25 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawHpBar(c, x, playerTop + 0.46f * u, w, 0.26f * u, Side.PLAYER, Pal.PLAYER_HP)
 
         // "Menu" button at the top right of the player panel, with the level next to it.
-        val bw = 1.6f * u
-        val bh = 0.56f * u
+        // Everything here is scaled by MENU_SCALE (1.5 = 50% bigger than the original design).
+        val k = MENU_SCALE
+        val bw = 1.6f * u * k
+        val bh = 0.56f * u * k
         val bx1 = right - 0.3f * u
         val by0 = playerTop
         battleMenuButton.set(bx1 - bw, by0, bx1, by0 + bh)
         fill.color = Pal.TILE
         c.drawRoundRect(battleMenuButton, bh / 2f, bh / 2f, fill)
         stroke.color = Pal.PANEL_EDGE
-        stroke.strokeWidth = 0.035f * u
+        stroke.strokeWidth = 0.035f * u * k
         c.drawRoundRect(battleMenuButton, bh / 2f, bh / 2f, stroke)
-        val ix = battleMenuButton.left + 0.36f * u
+        val ix = battleMenuButton.left + 0.36f * u * k
         val iy = battleMenuButton.centerY()
         stroke.color = Pal.TEXT
-        stroke.strokeWidth = 0.045f * u
-        for (k in -1..1) c.drawLine(ix - 0.13f * u, iy + k * 0.1f * u, ix + 0.13f * u, iy + k * 0.1f * u, stroke)
-        label(c, "Menu", battleMenuButton.left + 0.6f * u, iy + 0.1f * u, 0.28f * u, Pal.TEXT, Paint.Align.LEFT)
-        label(c, "Level ${level + 1}", battleMenuButton.left - 0.2f * u, playerTop + 0.38f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+        stroke.strokeWidth = 0.045f * u * k
+        for (i in -1..1) c.drawLine(ix - 0.13f * u * k, iy + i * 0.1f * u * k, ix + 0.13f * u * k, iy + i * 0.1f * u * k, stroke)
+        label(c, "Menu", battleMenuButton.left + 0.6f * u * k, iy + 0.1f * u * k, 0.28f * u * k, Pal.TEXT, Paint.Align.LEFT)
+        label(c, "Level ${level + 1}", battleMenuButton.left - MENU_LABEL_GAP * u, iy + 0.13f * u * k, 0.26f * u * k, Pal.TEXT_DIM, Paint.Align.RIGHT)
     }
 
     // ================================================================ tutorial, menu and dialogs
@@ -1135,6 +1137,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_PLAYED = "played"
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
+
+        /** Size of the duel's Menu button and level label (1 = original design). */
+        const val MENU_SCALE = 1.2f
+
+        /** Gap between the level label and the Menu button, in field cells. */
+        const val MENU_LABEL_GAP = 0.5f
         const val STAR_COUNT = 70
         const val BOLT_TIME = 0.22f
         const val TAP_DELAY = 1.5f
