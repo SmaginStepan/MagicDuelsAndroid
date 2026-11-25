@@ -146,6 +146,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val tilePop = Array(Rules.GRID_ROWS) { FloatArray(Rules.GRID_COLS) { 1f } }
     private var tappedRow = -1
     private var tappedCol = -1
+
+    /** Time since the training dummy was last hit (its hit animation is playing), or -1. */
+    private var dummyHitT = -1f
+
     // ---- paints ----
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -259,6 +263,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             shake[i] = 0f
             afterglow[i] = 0f
         }
+        dummyHitT = -1f
         tilePop.forEach { it.fill(1f) }
         queueShift = 0f
     }
@@ -335,6 +340,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             afterglow[i] = max(0f, afterglow[i] - dt * 3f)
         }
         for (row in tilePop) for (c in row.indices) row[c] = min(1f, row[c] + dt * 4f)
+        if (dummyHitT >= 0f) {
+            dummyHitT += dt
+            if (dummyHitT * DUMMY_HIT_FPS >= Art.DUMMY_HIT_FRAMES) dummyHitT = -1f
+        }
 
         for (side in Side.entries) {
             val i = side.ordinal
@@ -417,6 +426,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val i = side.ordinal
         shownHp[i] = max(battle.caster(side).hp.toFloat(), shownHp[i] - damage)
         flash[i] = 1f
+        // The training dummy plays its hit reaction (restarting if it is hit again).
+        if (side == Side.ENEMY && battle.opponent.kind == AvatarKind.DUMMY) dummyHitT = 0f
         shake[i] = 1f
         val h = if (side == Side.PLAYER) playerH else enemyH
         val c = chest(side)
@@ -628,11 +639,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun drawEnemyAvatar(c: Canvas) {
         val lost = battle.winner == Side.PLAYER
         val k = if (lost) smooth01(endTimer / 0.8f) else 0f
-        val x = enemyX + sin(clock * 55f) * shake[1] * 0.08f * u
         if (battle.opponent.kind == AvatarKind.DUMMY) {
-            val wobble = sin(clock * 18f) * shake[1] * 14f
-            art.drawDummy(c, x, enemyFoot, enemyH, wobble, flash[1], DEFEAT_TILT * k, 1f - 0.6f * k)
-        } else {
+            // The Midjourney sprite: its own hit animation when struck, no extra shaking.
+            val frame = if (dummyHitT >= 0f) (dummyHitT * DUMMY_HIT_FPS).toInt() else -1
+            art.drawDummySprite(c, enemyX, enemyFoot, enemyH * DUMMY_SPRITE_SCALE, frame, flash[1], DEFEAT_TILT * k, 1f - 0.6f * k)
+            return
+        }
+        val x = enemyX + sin(clock * 55f) * shake[1] * 0.08f * u
+        run {
             val e = battle.enemy
             val castColor = e.castElement?.let(art::color) ?: if (afterglow[1] > 0f) lastCastColor[1] else null
             val cast = if (e.isCasting) e.castProgress else afterglow[1]
@@ -1183,6 +1197,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f
+
+        /** Training dummy sprite height relative to the enemy avatar height, and its hit animation speed. */
+        const val DUMMY_SPRITE_SCALE = 1.15f
+        const val DUMMY_HIT_FPS = 20f
 
         /** Size of the duel's Menu button and level label (1 = original design). */
         const val MENU_SCALE = 1.2f

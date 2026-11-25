@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.RectF
@@ -28,6 +30,8 @@ class Art(private val res: Resources, private val packageName: String) {
     companion object {
         const val ANIM_COLS = 6
         const val ANIM_ROWS = 4
+        const val DUMMY_HIT_COLS = 4
+        const val DUMMY_HIT_FRAMES = 16
     }
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -386,49 +390,44 @@ class Art(private val res: Resources, private val packageName: String) {
         c.restore()
     }
 
-    // ---------------------------------------------------------------- training dummy
+    // ---------------------------------------------------------------- training dummy (Midjourney)
+    // res/drawable-nodpi/dummy_idle.png: the standing pose. dummy_hit.png: DUMMY_HIT_FRAMES frames of
+    // the hit reaction in a DUMMY_HIT_COLS-wide grid, same size and framing as the idle pose
+    // (made with tools/art/cut-sprite.ps1, see art/dummy/README.md).
 
-    fun drawDummy(c: Canvas, x: Float, footY: Float, h: Float, wobble: Float, flash: Float, tilt: Float, alpha: Float) {
-        val s = h / 100f
-        val a = (alpha * 255).toInt()
-        fun col(v: Long) = withAlpha(mix(v.toInt(), RED, flash * 0.55f), a)
+    private val dummyIdle: Bitmap by lazy { decode(R.drawable.dummy_idle) }
+    private val dummyHit: Bitmap by lazy { decode(R.drawable.dummy_hit) }
+    private val spritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val spriteSrc = Rect()
+    private val spriteDst = RectF()
+
+    private fun decode(id: Int): Bitmap = BitmapFactory.decodeResource(res, id, BitmapFactory.Options().apply { inScaled = false })
+
+    /**
+     * Draws the training dummy standing at ([x], [footY]), [h] pixels tall (bottom centre of the image
+     * on the foot point). [hitFrame] < 0 draws the idle pose, otherwise that frame of the hit reaction.
+     * [flash] tints it red when it takes damage; [tilt] tips it over (degrees) when it is defeated.
+     */
+    fun drawDummySprite(c: Canvas, x: Float, footY: Float, h: Float, hitFrame: Int, flash: Float, tilt: Float, alpha: Float) {
+        val bmp: Bitmap
+        if (hitFrame in 0 until DUMMY_HIT_FRAMES) {
+            bmp = dummyHit
+            val fw = bmp.width / DUMMY_HIT_COLS
+            val fh = bmp.height / ((DUMMY_HIT_FRAMES + DUMMY_HIT_COLS - 1) / DUMMY_HIT_COLS)
+            spriteSrc.set((hitFrame % DUMMY_HIT_COLS) * fw, (hitFrame / DUMMY_HIT_COLS) * fh, (hitFrame % DUMMY_HIT_COLS + 1) * fw, (hitFrame / DUMMY_HIT_COLS + 1) * fh)
+        } else {
+            bmp = dummyIdle
+            spriteSrc.set(0, 0, bmp.width, bmp.height)
+        }
+        val w = h * spriteSrc.width() / spriteSrc.height()
+        spritePaint.alpha = (255 * alpha.coerceIn(0f, 1f)).toInt()
+        spritePaint.colorFilter =
+            if (flash > 0f) PorterDuffColorFilter(withAlpha(RED, (110 * flash).toInt()), PorterDuff.Mode.SRC_ATOP) else null
         c.save()
         c.translate(x, footY)
-        c.rotate(wobble + tilt)
-        c.scale(s, s)
-        fill.color = withAlpha(BLACK, (85 * alpha).toInt())
-        c.drawOval(-24f, -4f, 24f, 4f, fill)
-        fill.color = col(0xFF5B3A1E)
-        c.drawRoundRect(-17f, -6f, 17f, 0f, 2f, 2f, fill)
-        fill.color = col(0xFF8B5A2B)
-        c.drawRect(-3.5f, -86f, 3.5f, -5f, fill)
-        c.drawRoundRect(-31f, -62f, 31f, -56f, 2f, 2f, fill)
-        stroke.color = col(0xFFE2C46E)
-        stroke.strokeWidth = 1.8f
-        for (sx in floatArrayOf(-1f, 1f)) for (dy in floatArrayOf(-5f, 0f, 5f)) {
-            c.drawLine(31f * sx, -59f, 38f * sx, -59f + dy, stroke)
-        }
-        fill.color = col(0xFFCFAE6B)
-        c.drawRoundRect(-15f, -64f, 15f, -27f, 7f, 7f, fill)
-        stroke.color = col(0xFF8E6E35)
-        stroke.strokeWidth = 2f
-        c.drawLine(-15f, -33f, 15f, -33f, stroke)
-        fill.color = col(0xFFC8423A)
-        c.drawCircle(0f, -47f, 8f, fill)
-        fill.color = col(0xFFF1E3C0)
-        c.drawCircle(0f, -47f, 5f, fill)
-        fill.color = col(0xFFC8423A)
-        c.drawCircle(0f, -47f, 2.2f, fill)
-        fill.color = col(0xFFDCC189)
-        c.drawCircle(0f, -76f, 11f, fill)
-        stroke.color = col(0xFFE2C46E)
-        stroke.strokeWidth = 1.6f
-        for (dx in floatArrayOf(-5f, -1.5f, 2f, 5.5f)) c.drawLine(dx * 0.6f, -86f, dx, -92f, stroke)
-        stroke.color = col(0xFF5B3A1E)
-        stroke.strokeWidth = 1.8f
-        c.drawLine(-6.5f, -80f, -2.5f, -76f, stroke); c.drawLine(-2.5f, -80f, -6.5f, -76f, stroke)
-        c.drawLine(2.5f, -80f, 6.5f, -76f, stroke); c.drawLine(6.5f, -80f, 2.5f, -76f, stroke)
-        c.drawLine(-4f, -70f, 4f, -70f, stroke)
+        if (tilt != 0f) c.rotate(tilt)
+        spriteDst.set(-w / 2f, -h, w / 2f, 0f)
+        c.drawBitmap(bmp, spriteSrc, spriteDst, spritePaint)
         c.restore()
     }
 }

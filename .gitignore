@@ -13,3 +13,5 @@
 
 # Frames extracted from the Midjourney videos (rebuildable, see art/ANIMATIONS.md)
 /art/*/anim/*/frame_*.png
+/art/*/anim/frame_*.png
+/art/*/anim/idle.png
