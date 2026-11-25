@@ -129,12 +129,21 @@ class Battle(
     val player = Caster(Side.PLAYER, Rules.PLAYER_HP, Rules.PLAYER_CAST_TIME)
     val enemy = Caster(Side.ENEMY, opponent.hp, opponent.castTime)
 
-    /** The bot's visible, repeating spell order, generated randomly for each duel. */
-    val botShots: List<Shot> =
-        if (opponent.fires) List(Rules.BOT_SEQUENCE_LENGTH) { Shot(elements.random(random), random.nextInt(Rules.ROWS)) }
-        else emptyList()
-    var botIndex = 0
-        private set
+    private val plannedShots = ArrayDeque<Shot>()
+
+    /**
+     * The bot's visible plan: its next [Rules.BOT_SEQUENCE_LENGTH] shots, generated randomly in advance.
+     * The first one is cast next; once it has been cast it leaves the queue and a newly planned
+     * shot joins at the end.
+     */
+    val botQueue: List<Shot> get() = plannedShots
+
+    init {
+        if (opponent.fires) repeat(Rules.BOT_SEQUENCE_LENGTH) { plannedShots.addLast(randomShot()) }
+    }
+
+    private fun randomShot() = Shot(elements.random(random), random.nextInt(Rules.ROWS))
+
     private var botWait = opponent.idleTime * 0.5f
 
     private val flying = ArrayList<Projectile>()
@@ -207,17 +216,18 @@ class Battle(
     }
 
     private fun updateBot(dt: Float) {
-        if (botShots.isEmpty()) return
+        if (plannedShots.isEmpty()) return
         if (enemy.isCasting) {
             enemy.advance(dt)?.let { shot ->
                 launch(Side.ENEMY, shot)
-                botIndex = (botIndex + 1) % botShots.size
+                plannedShots.removeFirst()
+                plannedShots.addLast(randomShot())
                 botWait = opponent.idleTime
             }
         } else {
             botWait -= dt
             if (botWait <= 0f) {
-                val shot = botShots[botIndex]
+                val shot = plannedShots.first()
                 enemy.startCast(shot.element, shot.lane)
                 events += BattleEvent.CastStarted(Side.ENEMY, shot.element, shot.lane)
             }

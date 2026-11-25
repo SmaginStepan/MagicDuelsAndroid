@@ -33,10 +33,21 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   Example: 4 globes then 3 globes = 4×5×1 + 3×5×2 = 20 + 30 = 50.
 - Impacts are resolved one at a time; a shot that arrives while the field is moving waits at the edge.
 
+## Menu and tutorial
+- The game opens on a start menu: **Continue** (shows your level and next opponent), **Restart game**
+  (asks first, then back to level 1 with the tutorial), and Leaderboard / PvP duel / Options, which
+  show "coming soon" for now. In a duel, the **Menu** button or Android Back returns to the menu (the duel
+  pauses); Back on the menu closes the app.
+- Level 1 (target dummy) is the tutorial: short hints that follow what you do — tap a spell, watch it fly
+  and push, line up 3+, how damage and chains work, and a note if a shot backfires. Beating the dummy
+  ends the tutorial for good (until Restart game).
+
 ## Opponents (endless ladder, `Opponents.kt`)
-- Level 1 Straw dummy (40 HP) and level 2 Oak dummy (80 HP) never fire back.
-- From level 3 on, mages that level up. Each repeats a random but visible order of 5 shots (element + lane)
-  and follows the same impact rules, except that its shots push full rows instead of backfiring (see Impact).
+- Level 1 Target dummy (40 HP) and level 2 Oak dummy (80 HP) never fire back.
+- From level 3 on, mages that level up. Each shows its plan: the next 5 shots (element + lane), generated
+  randomly in advance. The first one is cast next; when it has been cast it leaves the queue and a newly
+  planned random shot joins at the end. Bots follow the same impact rules, except that their shots push
+  full rows instead of backfiring (see Impact).
 - The first mage casts for 15 s and waits 28 s between shots (10× slower than the original first bot).
   Each next mage casts and waits 15% shorter, down to a floor of 0.8 s cast / 0.6 s wait, and has 8 more HP
   (90 HP at first, at most 250). Around level 17 they are as fast as the original first bot.
@@ -47,4 +58,4 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 
 ## Not built yet
-Player levelling up / unlocking elements, sound, menus, PvP.
+Player levelling up / unlocking elements, sound, leaderboard, PvP, options.

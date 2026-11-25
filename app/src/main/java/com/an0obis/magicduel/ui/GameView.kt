@@ -25,6 +25,7 @@ import com.an0obis.magicduel.game.Opponents
 import com.an0obis.magicduel.game.Projectile
 import com.an0obis.magicduel.game.Rules
 import com.an0obis.magicduel.game.Side
+import com.an0obis.magicduel.game.Tutorial
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.hypot
@@ -83,8 +84,24 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private val prefs = context.getSharedPreferences("magic_duel", Context.MODE_PRIVATE)
     private var level = prefs.getInt(KEY_LEVEL, 0).coerceAtLeast(0)
+    private var tutorialDone = prefs.getBoolean(KEY_TUTORIAL_DONE, level > 0)
+    private var played = prefs.getBoolean(KEY_PLAYED, level > 0)
     private var battle = Battle(Opponents.forLevel(level))
+    private var tutorial: Tutorial? = null
     private val art = Art(context.resources, context.packageName)
+
+    // ---- screens: the start menu (with small dialogs) and the duel ----
+    private enum class Screen { MENU, BATTLE }
+    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS }
+    private var screen = Screen.MENU
+    private var dialog: Dialog? = null
+    private var dialogOpenedAt = 0f
+    private val menuButtons = LinkedHashMap<String, RectF>()
+    private val dialogButtons = LinkedHashMap<String, RectF>()
+    private val battleMenuButton = RectF()
+
+    /** 1 right after the bot's queue moved up by one spell, easing to 0 (the chips slide left). */
+    private var queueShift = 0f
 
     private var running = false
     private var lastFrameNanos = 0L
@@ -144,7 +161,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     init {
         val r = Random(7)
         for (i in stars.indices) stars[i] = r.nextFloat()
-        resetEffects()
+        startBattle()
     }
 
     // ================================================================ lifecycle and loop
@@ -240,21 +257,57 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             afterglow[i] = 0f
         }
         tilePop.forEach { it.fill(1f) }
+        queueShift = 0f
+    }
+
+    /** A fresh duel at the current level; level 1 runs the tutorial until it has been beaten once. */
+    private fun startBattle() {
+        battle = Battle(Opponents.forLevel(level))
+        tutorial = if (level == 0 && !tutorialDone) Tutorial() else null
+        resetEffects()
     }
 
     private fun nextBattle() {
         if (battle.winner == Side.PLAYER) level++
-        prefs.edit().putInt(KEY_LEVEL, level).apply()
-        battle = Battle(Opponents.forLevel(level))
-        resetEffects()
+        save()
+        startBattle()
+    }
+
+    private fun save() {
+        prefs.edit()
+            .putInt(KEY_LEVEL, level)
+            .putBoolean(KEY_TUTORIAL_DONE, tutorialDone)
+            .putBoolean(KEY_PLAYED, played)
+            .apply()
+    }
+
+    /** "Restart game": back to level 1, tutorial included. */
+    private fun restartGame() {
+        level = 0
+        tutorialDone = false
+        played = true
+        save()
+        startBattle()
+        dialog = null
+        screen = Screen.BATTLE
+    }
+
+    /** Android back: close a dialog, or leave the duel for the menu. Returns false to let the app close. */
+    fun onBack(): Boolean = when {
+        dialog != null -> { dialog = null; true }
+        screen == Screen.BATTLE -> { screen = Screen.MENU; true }
+        else -> false
     }
 
     // ================================================================ simulation step
 
     private fun step(dt: Float) {
         clock += dt
+        if (screen != Screen.BATTLE) return // the duel waits while the menu is open
         battle.update(dt)
         for (event in battle.drainEvents()) onEvent(event)
+        tutorial?.update(dt)
+        queueShift = max(0f, queueShift - dt / QUEUE_SHIFT_TIME)
 
         val it = sparks.iterator()
         while (it.hasNext()) {
@@ -294,6 +347,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     private fun onEvent(e: BattleEvent) {
+        tutorial?.onEvent(e)
+        if (e is BattleEvent.Launched && e.side == Side.ENEMY) queueShift = 1f
+        if (e is BattleEvent.GameOver && e.winner == Side.PLAYER && tutorial != null) {
+            tutorialDone = true
+            save()
+        }
         when (e) {
             is BattleEvent.CastStarted -> Unit
             is BattleEvent.Launched -> {
@@ -361,6 +420,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_POINTER_DOWN) return true
         val x = event.getX(event.actionIndex)
         val y = event.getY(event.actionIndex)
+        if (screen == Screen.MENU) {
+            onMenuTap(x, y)
+            return true
+        }
+        if (RectF(battleMenuButton).apply { inset(-0.2f * u, -0.2f * u) }.contains(x, y)) {
+            screen = Screen.MENU
+            return true
+        }
         if (battle.winner != null) {
             if (endTimer > TAP_DELAY) nextBattle()
             return true
@@ -376,6 +443,37 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         }
         return true
+    }
+
+    private fun onMenuTap(x: Float, y: Float) {
+        val open = dialog
+        if (open != null) {
+            // The dialog's buttons sit where the menu's buttons were: ignore a quick double tap,
+            // so "Restart game" can't be confirmed by accident.
+            if (clock - dialogOpenedAt < DIALOG_TAP_GUARD) return
+            when (dialogButtons.entries.firstOrNull { it.value.contains(x, y) }?.key) {
+                "restart" -> restartGame()
+                "cancel", "ok" -> dialog = null
+                else -> if (open != Dialog.RESTART) dialog = null // "coming soon" closes on any tap
+            }
+            return
+        }
+        when (menuButtons.entries.firstOrNull { it.value.contains(x, y) }?.key) {
+            "continue" -> {
+                if (!played) {
+                    played = true
+                    save()
+                }
+                screen = Screen.BATTLE
+            }
+            "restart" -> dialog = Dialog.RESTART
+            "leaderboard" -> dialog = Dialog.LEADERBOARD
+            "pvp" -> dialog = Dialog.PVP
+            "options" -> dialog = Dialog.OPTIONS
+            else -> return
+        }
+        if (dialog != null) dialogOpenedAt = clock
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
     }
 
     // ================================================================ geometry
@@ -398,6 +496,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     override fun onDraw(c: Canvas) {
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), sky)
         drawStars(c)
+        if (screen == Screen.MENU) {
+            drawMenu(c)
+            return
+        }
         drawEnemyPanel(c)
         drawEnemyAvatar(c)
         drawField(c)
@@ -410,6 +512,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawBolts(c)
         drawSparks(c)
         drawTexts(c)
+        drawTutorial(c)
         drawBanner(c)
         drawEndOverlay(c)
     }
@@ -471,19 +574,23 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawHpBar(c, x, enemyTop + 0.56f * u, w, 0.26f * u, Side.ENEMY, Pal.ENEMY_HP)
 
         val chipsTop = enemyTop + 1.08f * u
-        if (battle.botShots.isEmpty()) {
+        if (battle.botQueue.isEmpty()) {
             label(c, "Training dummy: doesn't fire back", x, chipsTop + 0.42f * u, 0.27f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
             return
         }
         val chip = 0.74f * u
         val gap = 0.14f * u
         val rr = 0.14f * u
-        battle.botShots.forEachIndexed { i, shot ->
-            val cx = x + i * (chip + gap)
-            val next = i == battle.botIndex
+        // The bot's plan: the first spell is cast next. When it has been cast, the queue slides left
+        // and a newly planned spell fades in at the end.
+        val slide = 1f - easeOut(1f - queueShift)
+        battle.botQueue.forEachIndexed { i, shot ->
+            val cx = x + (i + slide) * (chip + gap)
+            val next = i == 0
             val col = art.color(shot.element)
             rect.set(cx, chipsTop, cx + chip, chipsTop + chip)
-            bitmapPaint.alpha = if (next) 255 else 170
+            val fadeIn = if (i == battle.botQueue.lastIndex) 1f - queueShift else 1f
+            bitmapPaint.alpha = ((if (next) 255 else 170) * fadeIn).toInt()
             c.drawBitmap(art.button(shot.element, chip.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
             bitmapPaint.alpha = 255
             if (next) {
@@ -491,7 +598,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 stroke.color = col
                 c.drawRoundRect(rect, rr, rr, stroke)
             }
-            label(c, "${shot.lane + 1}", cx + chip - 0.1f * u, chipsTop + chip - 0.08f * u, 0.26f * u, WHITE, Paint.Align.RIGHT)
+            label(c, "${shot.lane + 1}", cx + chip - 0.1f * u, chipsTop + chip - 0.08f * u, 0.26f * u, WHITE, Paint.Align.RIGHT, fadeIn)
             if (next && battle.enemy.isCasting) {
                 rect.set(cx - 0.06f * u, chipsTop - 0.06f * u, cx + chip + 0.06f * u, chipsTop + chip + 0.06f * u)
                 stroke.color = WHITE
@@ -681,7 +788,190 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         label(c, "You", x, playerTop + 0.32f * u, 0.38f * u, Pal.TEXT, Paint.Align.LEFT)
         label(c, "${ceil(shownHp[Side.PLAYER.ordinal]).toInt()}", x + w, playerTop + 0.32f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
         drawHpBar(c, x, playerTop + 0.46f * u, w, 0.26f * u, Side.PLAYER, Pal.PLAYER_HP)
-        label(c, "Level ${level + 1}", right - 0.35f * u, playerTop + 0.32f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+
+        // "Menu" button at the top right of the player panel, with the level next to it.
+        val bw = 1.6f * u
+        val bh = 0.56f * u
+        val bx1 = right - 0.3f * u
+        val by0 = playerTop
+        battleMenuButton.set(bx1 - bw, by0, bx1, by0 + bh)
+        fill.color = Pal.TILE
+        c.drawRoundRect(battleMenuButton, bh / 2f, bh / 2f, fill)
+        stroke.color = Pal.PANEL_EDGE
+        stroke.strokeWidth = 0.035f * u
+        c.drawRoundRect(battleMenuButton, bh / 2f, bh / 2f, stroke)
+        val ix = battleMenuButton.left + 0.36f * u
+        val iy = battleMenuButton.centerY()
+        stroke.color = Pal.TEXT
+        stroke.strokeWidth = 0.045f * u
+        for (k in -1..1) c.drawLine(ix - 0.13f * u, iy + k * 0.1f * u, ix + 0.13f * u, iy + k * 0.1f * u, stroke)
+        label(c, "Menu", battleMenuButton.left + 0.6f * u, iy + 0.1f * u, 0.28f * u, Pal.TEXT, Paint.Align.LEFT)
+        label(c, "Level ${level + 1}", battleMenuButton.left - 0.2f * u, playerTop + 0.38f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+    }
+
+    // ================================================================ tutorial, menu and dialogs
+
+    /** Splits [s] into lines that fit [maxWidth] at text size [size]. */
+    private fun wrap(s: String, size: Float, maxWidth: Float): List<String> {
+        text.textSize = size
+        val lines = ArrayList<String>()
+        var line = ""
+        for (word in s.split(' ')) {
+            val candidate = if (line.isEmpty()) word else "$line $word"
+            if (line.isEmpty() || text.measureText(candidate) <= maxWidth) line = candidate
+            else {
+                lines += line
+                line = word
+            }
+        }
+        if (line.isNotEmpty()) lines += line
+        return lines
+    }
+
+    /** The tutorial's current hint, in a card between the field and your panel. */
+    private fun drawTutorial(c: Canvas) {
+        val t = tutorial ?: return
+        val hint = t.hint ?: return
+        if (!battle.started || battle.winner != null) return
+        val pulse = 0.5f + 0.5f * sin(clock * 5f)
+        if (t.pointsAtSpells) {
+            val gw = 3 * tile + 2 * tileGap
+            val gh = 5 * tile + 4 * tileGap
+            rect.set(gridLeft - 0.12f * u, gridTop - 0.12f * u, gridLeft + gw + 0.12f * u, gridTop + gh + 0.12f * u)
+            stroke.color = withAlpha(GOLD, (90 + 140 * pulse).toInt())
+            stroke.strokeWidth = 0.06f * u
+            c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
+        }
+        val size = 0.28f * u
+        val lineH = 0.38f * u
+        val pad = 0.2f * u
+        val x0 = left + 0.3f * u
+        val x1 = right - 0.3f * u
+        val lines = wrap(hint, size, x1 - x0 - 2 * pad)
+        val bottom = playerTop - 0.1f * u
+        val top = bottom - (lines.size * lineH + 2 * pad - 0.06f * u)
+        rect.set(x0, top, x1, bottom)
+        fill.color = withAlpha(Pal.CARD, 235)
+        c.drawRoundRect(rect, 0.22f * u, 0.22f * u, fill)
+        stroke.color = withAlpha(GOLD, (110 + 80 * pulse).toInt())
+        stroke.strokeWidth = 0.035f * u
+        c.drawRoundRect(rect, 0.22f * u, 0.22f * u, stroke)
+        lines.forEachIndexed { i, s -> label(c, s, x0 + pad, top + pad + (i + 0.78f) * lineH, size, Pal.TEXT, Paint.Align.LEFT) }
+    }
+
+    private fun drawButton(c: Canvas, r: RectF, title: String, sub: String?, primary: Boolean, small: Boolean, danger: Boolean = false) {
+        val rr = 0.25f * u
+        fill.color = if (primary) mix(Pal.CARD, GOLD, 0.12f) else Pal.CARD
+        c.drawRoundRect(r, rr, rr, fill)
+        stroke.color = when {
+            danger -> Pal.ENEMY_HP
+            primary -> GOLD
+            else -> Pal.PANEL_EDGE
+        }
+        stroke.strokeWidth = (if (primary) 0.05f else 0.035f) * u
+        c.drawRoundRect(r, rr, rr, stroke)
+        val size = when {
+            small -> 0.3f * u
+            primary -> 0.46f * u
+            else -> 0.38f * u
+        }
+        val color = when {
+            danger -> Pal.ENEMY_HP
+            primary -> GOLD
+            else -> Pal.TEXT
+        }
+        if (sub == null) {
+            label(c, title, r.centerX(), r.centerY() + size * 0.35f, size, color, Paint.Align.CENTER)
+        } else {
+            label(c, title, r.centerX(), r.centerY() - 0.04f * u, size, color, Paint.Align.CENTER)
+            label(c, sub, r.centerX(), r.centerY() + size * 0.85f, (if (small) 0.22f else 0.26f) * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+        }
+    }
+
+    /** Start menu: continue or restart, plus leaderboard, PvP and options (coming later). */
+    private fun drawMenu(c: Canvas) {
+        val cx = width / 2f
+        val contentH = 9.4f * u
+        val availH = height - safeTop - safeBottom
+        val top = safeTop + max(0.6f * u, (availH - contentH) * 0.4f)
+        val titleY = top + 1.1f * u
+        label(c, "Magic Duel", cx, titleY, 1.05f * u, GOLD, Paint.Align.CENTER)
+        label(c, "A duel of the elements", cx, titleY + 0.7f * u, 0.34f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+
+        val elements = Element.active(Rules.START_ELEMENTS)
+        val gs = (1.2f * u).toInt().coerceAtLeast(8)
+        val gap = 0.3f * u
+        val rowW = elements.size * gs + (elements.size - 1) * gap
+        var gx = cx - rowW / 2f
+        val gy = titleY + 1.3f * u
+        for (e in elements) {
+            val bob = sin(clock * 2f + e.ordinal) * 0.07f * u
+            rect.set(gx, gy + bob, gx + gs, gy + gs + bob)
+            c.drawBitmap(art.globe(e, gs, animFrame(e)), null, rect, bitmapPaint)
+            gx += gs + gap
+        }
+
+        menuButtons.clear()
+        val bw = min(width - 1.8f * u, 6.6f * u)
+        val bx = cx - bw / 2f
+        var by = gy + gs + 1.0f * u
+        val opponent = Opponents.forLevel(level)
+        val sub = "Level ${level + 1} · ${opponent.name}" + if (level == 0 && !tutorialDone) " · tutorial" else ""
+        val cont = RectF(bx, by, bx + bw, by + 1.25f * u)
+        drawButton(c, cont, if (played) "Continue" else "Start game", sub, primary = true, small = false)
+        menuButtons["continue"] = cont
+        by = cont.bottom + 0.3f * u
+        val restart = RectF(bx, by, bx + bw, by + 0.95f * u)
+        drawButton(c, restart, "Restart game", null, primary = false, small = false)
+        menuButtons["restart"] = restart
+        by = restart.bottom + 0.55f * u
+        val sgap = 0.25f * u
+        val sw = (bw - 2 * sgap) / 3f
+        listOf("leaderboard" to "Leaderboard", "pvp" to "PvP duel", "options" to "Options").forEachIndexed { i, (id, title) ->
+            val r = RectF(bx + i * (sw + sgap), by, bx + i * (sw + sgap) + sw, by + 0.9f * u)
+            drawButton(c, r, title, "soon", primary = false, small = true)
+            menuButtons[id] = r
+        }
+        dialog?.let { drawDialog(c, it) }
+    }
+
+    private fun drawDialog(c: Canvas, d: Dialog) {
+        dialogButtons.clear()
+        fill.color = withAlpha(BLACK, 170)
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+        val (title, message) = when (d) {
+            Dialog.RESTART -> "Restart game?" to "You go back to level 1 and the tutorial starts again. Your current progress is lost."
+            Dialog.LEADERBOARD -> "Leaderboard" to "Coming soon: compare your best level with other duellists."
+            Dialog.PVP -> "PvP duels" to "Coming soon: duel other players online."
+            Dialog.OPTIONS -> "Options" to "Coming soon: sound, vibration and more."
+        }
+        val w = min(width - 1.6f * u, 7f * u)
+        val lines = wrap(message, 0.32f * u, w - 0.8f * u)
+        val h = 1.2f * u + lines.size * 0.46f * u + 1.6f * u
+        val cx = width / 2f
+        val cy = height / 2f
+        val card = RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        fill.color = Pal.CARD
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, fill)
+        stroke.color = GOLD
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, stroke)
+        label(c, title, cx, card.top + 0.9f * u, 0.5f * u, GOLD, Paint.Align.CENTER)
+        lines.forEachIndexed { i, s -> label(c, s, cx, card.top + 1.55f * u + i * 0.46f * u, 0.32f * u, Pal.TEXT, Paint.Align.CENTER) }
+        val bTop = card.bottom - 1.1f * u
+        if (d == Dialog.RESTART) {
+            val half = (w - 0.9f * u) / 2f
+            val yes = RectF(card.left + 0.3f * u, bTop, card.left + 0.3f * u + half, bTop + 0.8f * u)
+            val no = RectF(card.right - 0.3f * u - half, bTop, card.right - 0.3f * u, bTop + 0.8f * u)
+            drawButton(c, yes, "Restart", null, primary = false, small = true, danger = true)
+            drawButton(c, no, "Cancel", null, primary = false, small = true)
+            dialogButtons["restart"] = yes
+            dialogButtons["cancel"] = no
+        } else {
+            val ok = RectF(cx - 1.4f * u, bTop, cx + 1.4f * u, bTop + 0.8f * u)
+            drawButton(c, ok, "OK", null, primary = false, small = true)
+            dialogButtons["ok"] = ok
+        }
     }
 
     private fun drawPlayerAvatar(c: Canvas) {
@@ -821,6 +1111,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val won = winner == Side.PLAYER
         label(c, if (won) "Victory!" else "Defeated", cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
         val subtitle = when {
+            won && tutorial != null -> "Tutorial complete! Next: ${Opponents.forLevel(level + 1).name}"
             won -> "Next: ${Opponents.forLevel(level + 1).name}"
             else -> "${battle.opponent.name} wins this time"
         }
@@ -832,6 +1123,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private companion object {
         const val KEY_LEVEL = "level"
+        const val KEY_TUTORIAL_DONE = "tutorialDone"
+        const val KEY_PLAYED = "played"
+        const val QUEUE_SHIFT_TIME = 0.35f
+        const val DIALOG_TAP_GUARD = 0.4f
         const val STAR_COUNT = 70
         const val BOLT_TIME = 0.22f
         const val TAP_DELAY = 1.5f

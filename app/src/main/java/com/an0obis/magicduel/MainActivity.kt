@@ -7,6 +7,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.window.OnBackInvokedDispatcher
 import com.an0obis.magicduel.ui.GameView
 
 class MainActivity : Activity() {
@@ -22,6 +23,20 @@ class MainActivity : Activity() {
         game = GameView(this)
         setContentView(game)
         hideSystemBars()
+        // Back: close a dialog, or leave the duel for the menu; on the menu, exit.
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+                if (!game.onBack()) finish()
+            }
+        }
+    }
+
+    @Deprecated("Only used below Android 13; newer versions use the OnBackInvokedCallback above.")
+    override fun onBackPressed() {
+        if (!game.onBack()) {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
     }
 
     override fun onResume() {

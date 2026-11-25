@@ -29,7 +29,7 @@ data class Opponent(
  */
 object Opponents {
     private val dummies = listOf(
-        Opponent("Straw dummy", AvatarKind.DUMMY, hp = 40),
+        Opponent("Target dummy", AvatarKind.DUMMY, hp = 40),
         Opponent("Oak dummy", AvatarKind.DUMMY, hp = 80),
     )
 

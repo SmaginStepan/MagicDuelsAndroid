@@ -113,27 +113,50 @@ class BattleTest {
         val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 60f)
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(mage, seed = 9, startBoard = board, introTime = 0f)
-        val shot = b.botShots[0]
+        val shot = b.botQueue[0]
         run(b, 30f + mage.castTime + Rules.FLIGHT_TIME[shot.lane] + 1.5f)
         assertEquals("${Board.code(shot.element)}....", board.describe()[4])
     }
 
     @Test
-    fun botFiresItsVisibleSequenceInOrder() {
+    fun botCastsTheHeadOfItsQueueThenPlansANewShotAtTheTail() {
         val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.5f, idleTime = 0.5f)
         val b = Battle(mage, seed = 5, introTime = 0f)
-        assertEquals(Rules.BOT_SEQUENCE_LENGTH, b.botShots.size)
-        val launched = mutableListOf<Shot>()
+        assertEquals(Rules.BOT_SEQUENCE_LENGTH, b.botQueue.size)
+        var before = b.botQueue.toList()
+        var launches = 0
         var t = 0f
-        while (launched.size < 7 && t < 30f) {
+        while (launches < 7 && t < 30f) {
             b.update(0.02f)
             t += 0.02f
-            b.drainEvents()
-                .filterIsInstance<BattleEvent.Launched>()
-                .filter { it.side == Side.ENEMY }
-                .forEach { launched += Shot(it.element, it.lane) }
+            for (e in b.drainEvents()) {
+                if (e !is BattleEvent.Launched || e.side != Side.ENEMY) continue
+                assertEquals(before.first(), Shot(e.element, e.lane))
+                val now = b.botQueue.toList()
+                assertEquals(Rules.BOT_SEQUENCE_LENGTH, now.size)
+                assertEquals(before.drop(1), now.dropLast(1))
+                before = now
+                launches++
+            }
         }
-        assertEquals(b.botShots + b.botShots.take(2), launched)
+        assertEquals(7, launches)
+    }
+
+    @Test
+    fun botPlanIsRandomNotARepeatingLoop() {
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.2f, idleTime = 0.2f)
+        val b = Battle(mage, seed = 11, introTime = 0f)
+        val fired = mutableListOf<Shot>()
+        var t = 0f
+        while (fired.size < 20 && t < 60f) {
+            b.update(0.02f)
+            t += 0.02f
+            b.drainEvents().filterIsInstance<BattleEvent.Launched>().filter { it.side == Side.ENEMY }
+                .forEach { fired += Shot(it.element, it.lane) }
+        }
+        assertEquals(20, fired.size)
+        // A 5-shot loop would repeat exactly every 5 shots.
+        assertTrue((5 until 20).any { fired[it] != fired[it - 5] })
     }
 
     @Test
@@ -144,7 +167,7 @@ class BattleTest {
         // The bot waits idleTime / 2 (20 s) before its first cast, then 40 s between casts.
         val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 40f)
         val b = Battle(mage, seed = 4, startBoard = full, introTime = 0f)
-        val shot = b.botShots[0]
+        val shot = b.botQueue[0]
         val events = mutableListOf<BattleEvent>()
         var t = 0f
         while (t < 20f + mage.castTime + Rules.FLIGHT_TIME[shot.lane] + 2f) {
