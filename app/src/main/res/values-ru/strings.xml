@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">Magic Duel</string>
+    <string name="app_name">Arcane Duel</string>
 
-    <string name="tagline">Дуэль стихий</string>
+    <string name="tagline">Битва стихий</string>
     <string name="continue_game">Продолжить</string>
     <string name="start_game">Начать игру</string>
     <string name="level_fmt">Уровень %1$d</string>

@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">Magic Duel</string>
+    <string name="app_name">Arcane Duel</string>
 
     <!-- Start menu -->
-    <string name="tagline">A duel of the elements</string>
+    <string name="tagline">Clash of Elements</string>
     <string name="continue_game">Continue</string>
     <string name="start_game">Start game</string>
     <string name="level_fmt">Level %1$d</string>

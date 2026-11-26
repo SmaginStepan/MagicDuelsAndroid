@@ -1,4 +1,4 @@
-# Magic Duel — current rules (v0.1)
+# Arcane Duel: Clash of Elements — current rules (v0.1)
 
 A match-3 duel for Android (Kotlin, portrait). All numbers live in
 `app/src/main/java/com/an0obis/magicduel/game/Rules.kt` and the opponent ladder in `Opponents.kt`.

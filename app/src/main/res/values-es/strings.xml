@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">Magic Duel</string>
+    <string name="app_name">Arcane Duel</string>
 
-    <string name="tagline">Un duelo de los elementos</string>
+    <string name="tagline">Choque de elementos</string>
     <string name="continue_game">Continuar</string>
     <string name="start_game">Empezar</string>
     <string name="level_fmt">Nivel %1$d</string>

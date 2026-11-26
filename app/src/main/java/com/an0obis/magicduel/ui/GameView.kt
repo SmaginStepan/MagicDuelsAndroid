@@ -1469,7 +1469,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val availH = height - safeTop - safeBottom
         val top = safeTop + max(0.6f * u, (availH - contentH) * 0.4f)
         val titleY = top + 1.1f * u
-        label(c, "Magic Duel", cx, titleY, 1.05f * u, GOLD, Paint.Align.CENTER)
+        label(c, s(R.string.app_name), cx, titleY, 1.05f * u, GOLD, Paint.Align.CENTER)
         label(c, s(R.string.tagline), cx, titleY + 0.7f * u, 0.34f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
 
         val elements = Element.active(Rules.START_ELEMENTS)
