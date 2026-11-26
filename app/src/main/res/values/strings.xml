@@ -11,7 +11,14 @@
     <string name="pvp_duel">PvP duel</string>
     <string name="options">Options</string>
     <string name="soon">soon</string>
-    <string name="leaderboard_msg">Coming soon: compare your best level with other duellists.</string>
+    <string name="first_name_title">Welcome, mage! What is your name?</string>
+    <string name="lb_player">Player</string>
+    <string name="lb_level">Level</string>
+    <string name="lb_loading">Loading the leaderboard…</string>
+    <string name="lb_error">Can\'t reach the leaderboard. Check your connection and try again.</string>
+    <string name="lb_unavailable">The leaderboard isn\'t available in this version yet.</string>
+    <string name="lb_empty">No one is on the leaderboard yet.</string>
+    <string name="lb_retry">Retry</string>
     <string name="pvp_title">PvP duels</string>
     <string name="pvp_msg">Coming soon: duel other players online.</string>
     <string name="ok">OK</string>

@@ -36,7 +36,9 @@ import com.an0obis.magicduel.game.Caster
 import com.an0obis.magicduel.game.Element
 import com.an0obis.magicduel.game.Globe
 import com.an0obis.magicduel.game.Lesson
+import com.an0obis.magicduel.BuildConfig
 import com.an0obis.magicduel.R
+import com.an0obis.magicduel.net.ScoreClient
 import com.an0obis.magicduel.game.Opponent
 import com.an0obis.magicduel.game.Opponents
 import com.an0obis.magicduel.game.Projectile
@@ -127,6 +129,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var tutorial: Lesson? = null
     private val art = Art(context.resources, context.packageName)
     private val sounds = Sounds(context)
+
+    /** The online leaderboard: your best level and name (server settings in local.properties). */
+    private val leaderboard = Leaderboard(
+        ScoreClient(BuildConfig.SCORE_URL, BuildConfig.SCORE_GAME, BuildConfig.SCORE_API_KEY, BuildConfig.SCORE_SECRET),
+        prefs,
+    ) { post(it) }
 
     // ---- settings (Options) ----
     /** "en", "ru" or "es"; first time: the phone's language if the game has it, else English. */
@@ -282,6 +290,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val r = Random(7)
         for (i in stars.indices) stars[i] = r.nextFloat()
         startBattle()
+        // The leaderboard gets your level (players from before it existed join with theirs).
+        leaderboard.reached(level + 1, displayName())
+        // The first time the app opens, it asks your name (once, and only if you haven't set one;
+        // you can change it in Options).
+        if (!prefs.getBoolean(KEY_NAME_ASKED, false) && playerName.isBlank()) {
+            prefs.edit().putBoolean(KEY_NAME_ASKED, true).apply()
+            post { editName(first = true) }
+        }
     }
 
     // ================================================================ lifecycle and loop
@@ -408,7 +424,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     private fun nextBattle() {
-        if (battle.winner == Side.PLAYER) level++
+        if (battle.winner == Side.PLAYER) {
+            level++
+            leaderboard.reached(level + 1, displayName()) // a new level for the leaderboard
+        }
         save()
         startBattle()
     }
@@ -799,6 +818,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 hit == "restart" -> restartGame()
                 hit == "cancel" -> openDialog(Dialog.OPTIONS) // the restart question comes from Options
                 hit == "ok" || hit == "close" -> closeDialog()
+                hit == "lb_retry" -> leaderboard.open(displayName())
                 hit == "avatar_open" -> {
                     avatarFromOptions = true
                     openDialog(Dialog.AVATAR)
@@ -821,6 +841,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 open == Dialog.RESTART -> if (!dialogCard.contains(x, y)) openDialog(Dialog.OPTIONS)
                 open == Dialog.OPTIONS -> if (!dialogCard.contains(x, y)) dialog = null
                 open == Dialog.AVATAR -> if (!dialogCard.contains(x, y)) closeDialog()
+                open == Dialog.LEADERBOARD -> if (!dialogCard.contains(x, y)) closeDialog()
                 else -> dialog = null
             }
             if (hit != null) {
@@ -837,7 +858,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 }
                 screen = Screen.BATTLE
             }
-            "leaderboard" -> dialog = Dialog.LEADERBOARD
+            "leaderboard" -> {
+                dialog = Dialog.LEADERBOARD
+                leaderboard.open(displayName())
+            }
             "pvp" -> dialog = Dialog.PVP
             "options" -> dialog = Dialog.OPTIONS
             else -> return
@@ -1559,7 +1583,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val sgap = 0.25f * u
         val sw = (bw - 2 * sgap) / 3f
         listOf(
-            Triple("leaderboard", R.string.leaderboard, true),
+            Triple("leaderboard", R.string.leaderboard, false),
             Triple("pvp", R.string.pvp_duel, true),
             Triple("options", R.string.options, false),
         ).forEachIndexed { i, (id, title, soon) ->
@@ -1591,8 +1615,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         save()
     }
 
-    /** Your name, typed on the phone's keyboard in a small system dialog. */
-    private fun editName() {
+    /** Your name, typed on the phone's keyboard in a small system dialog ([first]: the welcome question on first launch). */
+    private fun editName(first: Boolean = false) {
         val input = EditText(context).apply {
             setText(playerName)
             setSingleLine()
@@ -1606,11 +1630,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             addView(input)
         }
         val d = AlertDialog.Builder(context)
-            .setTitle(s(R.string.your_name))
+            .setTitle(s(if (first) R.string.first_name_title else R.string.your_name))
             .setView(box)
             .setPositiveButton(s(R.string.save)) { _, _ ->
                 playerName = input.text.toString().trim().take(NAME_MAX)
                 save()
+                leaderboard.sync(displayName()) // the leaderboard shows the new name
             }
             .setNegativeButton(s(R.string.cancel), null)
             .create()
@@ -1765,6 +1790,93 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialogButtons["close"] = close
     }
 
+    /**
+     * The leaderboard: rank, name and highest level of the top 10. Your row is highlighted in gold,
+     * and if you're further down it follows after a gap, between your neighbours. While loading, or
+     * when the server can't be reached, a short message shows instead (with Retry after an error).
+     */
+    private fun drawLeaderboard(c: Canvas) {
+        val lb = leaderboard
+        val rowH = 0.62f * u
+        val ready = lb.state == Leaderboard.State.READY
+        val rows = if (ready) lb.top.size + (if (lb.mine.isNotEmpty()) lb.mine.size + 1 else 0) else 0
+        val bodyH = if (ready && rows > 0) 0.55f * u + rows * rowH else 1.6f * u
+        val w = min(width - 1.2f * u, 7.6f * u)
+        val h = 1.3f * u + bodyH + 0.35f * u + 0.8f * u + 0.35f * u
+        val cx = width / 2f
+        val cy = height / 2f
+        dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        val card = dialogCard
+        fill.color = Pal.CARD
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, fill)
+        stroke.color = GOLD
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, stroke)
+        label(c, s(R.string.leaderboard), cx, card.top + 0.85f * u, 0.46f * u, GOLD, Paint.Align.CENTER)
+        val x0 = card.left + 0.35f * u
+        val x1 = card.right - 0.35f * u
+        var y = card.top + 1.3f * u
+        val message = when {
+            lb.state == Leaderboard.State.UNAVAILABLE -> s(R.string.lb_unavailable)
+            lb.state == Leaderboard.State.ERROR -> s(R.string.lb_error)
+            !ready -> s(R.string.lb_loading)
+            rows == 0 -> s(R.string.lb_empty)
+            else -> null
+        }
+        if (message != null) {
+            wrap(message, 0.3f * u, w - 0.8f * u).forEachIndexed { i, line ->
+                label(c, line, cx, y + 0.6f * u + i * 0.42f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+            }
+        } else {
+            // Column headings: rank, player, level.
+            val rankX = x0 + 0.75f * u
+            val nameX = x0 + 1.0f * u
+            label(c, "#", rankX, y + 0.3f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+            label(c, s(R.string.lb_player), nameX, y + 0.3f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
+            label(c, s(R.string.lb_level), x1 - 0.1f * u, y + 0.3f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+            y += 0.55f * u
+            fun row(e: com.an0obis.magicduel.net.ScoreEntry) {
+                val me = e.playerId == lb.playerId
+                if (me) {
+                    rect.set(x0, y, x1, y + rowH - 0.06f * u)
+                    fill.color = withAlpha(GOLD, 40)
+                    c.drawRoundRect(rect, 0.15f * u, 0.15f * u, fill)
+                }
+                val col = if (me) GOLD else Pal.TEXT
+                val base = y + rowH * 0.62f
+                label(c, "${e.rank}", rankX, base, 0.3f * u, col, Paint.Align.RIGHT)
+                text.textSize = 0.3f * u
+                var name = e.name
+                val room = x1 - 1.3f * u - nameX
+                while (name.length > 1 && text.measureText(name) > room) name = name.dropLast(1)
+                if (name != e.name) name = name.dropLast(1) + "…"
+                label(c, name, nameX, base, 0.3f * u, col, Paint.Align.LEFT)
+                label(c, "${e.score}", x1 - 0.1f * u, base, 0.3f * u, col, Paint.Align.RIGHT)
+                y += rowH
+            }
+            lb.top.forEach(::row)
+            if (lb.mine.isNotEmpty()) {
+                label(c, "⋯", cx, y + rowH * 0.6f, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+                y += rowH
+                lb.mine.forEach(::row)
+            }
+        }
+        val by = card.bottom - 0.35f * u - 0.8f * u
+        if (lb.state == Leaderboard.State.ERROR) {
+            val half = (w - 0.9f * u) / 2f
+            val retry = RectF(card.left + 0.3f * u, by, card.left + 0.3f * u + half, by + 0.8f * u)
+            val close = RectF(card.right - 0.3f * u - half, by, card.right - 0.3f * u, by + 0.8f * u)
+            drawButton(c, retry, s(R.string.lb_retry), null, primary = true, small = true)
+            drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+            dialogButtons["lb_retry"] = retry
+            dialogButtons["close"] = close
+        } else {
+            val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
+            drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+            dialogButtons["close"] = close
+        }
+    }
+
     private fun drawDialog(c: Canvas, d: Dialog) {
         dialogButtons.clear()
         fill.color = withAlpha(BLACK, 170)
@@ -1777,9 +1889,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             drawAvatarPicker(c)
             return
         }
+        if (d == Dialog.LEADERBOARD) {
+            drawLeaderboard(c)
+            return
+        }
         val (title, message) = when (d) {
             Dialog.RESTART -> s(R.string.restart_q) to s(R.string.restart_msg)
-            Dialog.LEADERBOARD -> s(R.string.leaderboard) to s(R.string.leaderboard_msg)
             else -> s(R.string.pvp_title) to s(R.string.pvp_msg)
         }
         val w = min(width - 1.6f * u, 7f * u)
@@ -2073,6 +2188,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_SOUND = "sound"
         const val KEY_NAME = "playerName"
         const val KEY_AVATAR = "avatar"
+        const val KEY_NAME_ASKED = "nameAsked"
 
         /** Languages in Options: code and name in that language. */
         val LANGUAGES = listOf("en" to "English", "ru" to "Русский", "es" to "Español")

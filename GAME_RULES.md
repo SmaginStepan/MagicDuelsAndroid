@@ -83,10 +83,21 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   move.
 
 ## Menu and tutorial
-- The game opens on a start menu: **Continue** (shows your level and next opponent), **Restart game**
-  (asks first, then back to level 1 with the tutorial), and Leaderboard / PvP duel / Options, which
-  show "coming soon" for now. In a duel, the **Menu** button or Android Back returns to the menu (the duel
-  pauses); Back on the menu closes the app.
+- The game opens on a start menu: **Continue** (shows your level and next opponent), **Leaderboard**,
+  PvP duel ("coming soon") and **Options** (language, sound, your name, your avatar, and **Restart
+  game**, which asks first and then goes back to level 1 with the tutorial). In a duel, the **Menu**
+  button or Android Back returns to the menu (the duel pauses); Back on the menu closes the app.
+- The first time the app opens, it asks your name (once, if none is set; Options can change it).
+
+## Leaderboard
+- An online board of every player's **highest level** and name, on the ScoreServer service
+  (`net/ScoreClient.kt`; server settings in `local.properties`, not in git). If two players reached the
+  same level, **whoever reached it first ranks higher**. A rename doesn't change your place.
+- You are a random player id kept on the phone. Your best level (kept even after Restart game) is sent
+  at start-up, when you reach a new level and after a rename; if the phone was offline it's sent later.
+- The Leaderboard screen shows the top 10 (rank, name, level) with **your row highlighted**. If you're
+  further down, your row follows after a "⋯" gap, between your neighbours. While loading it says so;
+  if the server can't be reached there's a Retry button.
 - Level 1 (target dummy) is the tutorial: short hints that follow what you do — tap a spell, watch it fly
   and push, line up 3+, how damage and chains work, and a note if a shot backfires. Beating the dummy
   ends the tutorial for good (until Restart game).
@@ -111,4 +122,4 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 
 ## Not built yet
-Player levelling up / unlocking elements, leaderboard, PvP.
+Player levelling up / unlocking elements, PvP, paid avatars.

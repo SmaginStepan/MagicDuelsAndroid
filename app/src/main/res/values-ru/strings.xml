@@ -10,7 +10,14 @@
     <string name="pvp_duel">PvP-дуэль</string>
     <string name="options">Настройки</string>
     <string name="soon">скоро</string>
-    <string name="leaderboard_msg">Скоро: сравните свой лучший уровень с другими дуэлянтами.</string>
+    <string name="first_name_title">Добро пожаловать, маг! Как вас зовут?</string>
+    <string name="lb_player">Игрок</string>
+    <string name="lb_level">Уровень</string>
+    <string name="lb_loading">Загрузка таблицы лидеров…</string>
+    <string name="lb_error">Не удаётся связаться с таблицей лидеров. Проверьте подключение и попробуйте снова.</string>
+    <string name="lb_unavailable">В этой версии таблица лидеров пока недоступна.</string>
+    <string name="lb_empty">В таблице лидеров пока никого нет.</string>
+    <string name="lb_retry">Повторить</string>
     <string name="pvp_title">PvP-дуэли</string>
     <string name="pvp_msg">Скоро: дуэли с другими игроками онлайн.</string>
     <string name="ok">OK</string>

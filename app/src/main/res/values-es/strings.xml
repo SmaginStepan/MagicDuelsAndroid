@@ -10,7 +10,14 @@
     <string name="pvp_duel">Duelo PvP</string>
     <string name="options">Opciones</string>
     <string name="soon">pronto</string>
-    <string name="leaderboard_msg">Próximamente: compara tu mejor nivel con otros duelistas.</string>
+    <string name="first_name_title">¡Bienvenido, mago! ¿Cómo te llamas?</string>
+    <string name="lb_player">Jugador</string>
+    <string name="lb_level">Nivel</string>
+    <string name="lb_loading">Cargando la clasificación…</string>
+    <string name="lb_error">No se puede conectar con la clasificación. Revisa tu conexión e inténtalo de nuevo.</string>
+    <string name="lb_unavailable">La clasificación aún no está disponible en esta versión.</string>
+    <string name="lb_empty">Todavía no hay nadie en la clasificación.</string>
+    <string name="lb_retry">Reintentar</string>
     <string name="pvp_title">Duelos PvP</string>
     <string name="pvp_msg">Próximamente: duelos en línea contra otros jugadores.</string>
     <string name="ok">OK</string>
