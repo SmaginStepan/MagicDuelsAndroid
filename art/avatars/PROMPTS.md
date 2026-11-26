@@ -56,13 +56,14 @@ was ddeff857-…, 7b7a6b07-…, 0963cf2a-… (mage), 513884a8-…, f268fb56-…,
   48 frames evenly over each clip, first to last frame, taken in the browser
   (video seeked, element screenshotted).
 - `tools/art/cut-avatar.ps1 -Avatar <name>` removes the white background (fill from the border, plus
-  any enclosed near-white pocket of a dozen pixels or more; coloured crystal light stays; the outline is
+  any enclosed near-white pocket of a dozen pixels or more, `-PocketMin`, joined through corners too;
+  the sorceress is cut with `-PocketMin 4` for a one-pixel crack of background in her robe's folds; coloured crystal light stays; the outline is
   trimmed by two pixels and its edge darkened, so the
   video's white blur leaves no light rim) with one crop for all frames. Run with `-Height 300 -Cols 8`; it
   writes `res/drawable-nodpi/avatar_<name>.webp` (idle: cast1's first frame) and
   `avatar_<name>_cast1..3.webp` (8×6 sheets of 232×300 frames).
 - In the game (`Avatars.kt`, `GameView.drawPlayerAvatar`): each cast plays one of the three at random,
-  always lasting as long as your quickest cast (lane 5, about 4.4 s) and ending with the throw as the shot
+  always lasting as long as your quickest cast (lane 5, about 3.5 s) and ending with the throw as the shot
   leaves; in a longer cast the avatar stands still until the clip starts (bots: their quickest cast, at
   most 4 s). Neighbouring frames are blended, and afterwards the last pose
   fades back into the idle one over 0.4 s. Only the playing sheet is kept in memory.

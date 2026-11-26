@@ -18,8 +18,11 @@ class BattleTest {
         }
     }
 
+    /** How long the player's cast into [lane] takes (20% quicker than a bot's with the same base). */
+    private fun playerCast(lane: Int) = Rules.PLAYER_CAST_SCALE * Rules.castTime(Rules.PLAYER_CAST_TIME, lane)
+
     /** Enough time for the player's shot into [lane] to be cast, fly and fully resolve. */
-    private fun shotTime(lane: Int) = Rules.castTime(Rules.PLAYER_CAST_TIME, lane) + Rules.FLIGHT_TIME + 2.5f
+    private fun shotTime(lane: Int) = playerCast(lane) + Rules.FLIGHT_TIME + 2.5f
 
     @Test
     fun takingASpellRefreshesItsRowAndColumn() {
@@ -58,7 +61,7 @@ class BattleTest {
         val b = Battle(dummy, seed = 3, introTime = 0f)
         assertTrue(b.tryCast(0, 0))
         assertFalse(b.tryCast(1, 1))
-        run(b, Rules.castTime(Rules.PLAYER_CAST_TIME, 0) - 0.1f)
+        run(b, playerCast(0) - 0.1f)
         assertTrue(b.player.isCasting) // the top lane takes the longest
         run(b, 0.15f)
         assertFalse(b.player.isCasting)
@@ -92,9 +95,9 @@ class BattleTest {
         // On screen shots are 25% slower than the 9 units a second before, in and out of the field.
         assertEquals(9f * 0.75f, Rules.SHOT_SPEED * Rules.FIELD_CELL_UNITS, 0.0001f)
         assertEquals(flightUnits / Rules.SHOT_SCREEN_SPEED, Rules.FLIGHT_TIME, 0.0001f)
-        // So the player's casts are 9.45 s into lane 1 down to 4.39 s into lane 5.
-        assertEquals(9.447f, Rules.castTime(Rules.PLAYER_CAST_TIME, 0), 0.001f)
-        assertEquals(4.392f, Rules.castTime(Rules.PLAYER_CAST_TIME, 4), 0.001f)
+        // So the player's casts (20% quicker than these times) are 7.56 s into lane 1 down to 3.51 s into lane 5.
+        assertEquals(7.558f, playerCast(0), 0.001f)
+        assertEquals(3.514f, playerCast(4), 0.001f)
     }
 
     @Test
@@ -118,7 +121,7 @@ class BattleTest {
         val board = Board.parse(".....", "....F", "....W", "....E", "....A")
         val b = Battle(dummy, seed = 3, startBoard = board, introTime = 0f)
         assertTrue(b.tryCast(1, 0))
-        val arrives = Rules.castTime(Rules.PLAYER_CAST_TIME, 1) + Rules.FLIGHT_TIME
+        val arrives = playerCast(1) + Rules.FLIGHT_TIME
         val slide = 4f / Rules.SHOT_SPEED // from one cell outside the field to column 3
         run(b, arrives + slide + 0.1f)
         // Landed and freezing where it stopped: nothing has fallen yet.
@@ -140,16 +143,16 @@ class BattleTest {
         val board = Board.parse(".....", ".....", ".....", ".....", "....F")
         val b = Battle(dummy, seed = 3, startBoard = board, introTime = 0f)
         assertTrue(b.tryCast(4, 0))
-        run(b, Rules.castTime(Rules.PLAYER_CAST_TIME, 4) + Rules.FLIGHT_TIME + 4f / Rules.SHOT_SPEED + 0.1f)
+        run(b, playerCast(4) + Rules.FLIGHT_TIME + 4f / Rules.SHOT_SPEED + 0.1f)
         assertEquals(Battle.Phase.IDLE, b.phase)
         assertTrue(b.board[4, 3]!!.freeze > 0f) // still freezing (drawn only)
     }
 
     @Test
-    fun aShotReachesTheFieldAtTheSameMomentAsBefore() {
+    fun aShotReachesTheFieldRightAfterItsCast() {
         val b = Battle(dummy, seed = 3, introTime = 0f)
         assertTrue(b.tryCast(3, 0))
-        val before = Rules.PLAYER_CAST_TIME + Rules.LANE_TIME[3]
+        val before = playerCast(3) + Rules.FLIGHT_TIME
         run(b, before - 0.1f)
         assertTrue(b.drainEvents().none { it is BattleEvent.Landed })
         run(b, 0.2f + 5f / Rules.SHOT_SPEED)
@@ -346,7 +349,7 @@ class BattleTest {
         assertTrue(b.tryCastWall(2))
         assertFalse(b.tryCast(4, 0)) // one cast at a time
         val wallTime = b.player.castTime
-        assertTrue((0 until Rules.ROWS).all { wallTime > Rules.castTime(Rules.PLAYER_CAST_TIME, it) + 2f })
+        assertTrue((0 until Rules.ROWS).all { wallTime > playerCast(it) + 1.5f })
         val events = runCollecting(b, wallTime + 0.1f)
         assertEquals(listOf("..#..", "..#..", "..#..", "..F..", "..W.."), board.describe())
         assertTrue(events.contains(BattleEvent.WallsRaised(Side.PLAYER, 2, listOf(Cell(0, 2), Cell(1, 2), Cell(2, 2)))))

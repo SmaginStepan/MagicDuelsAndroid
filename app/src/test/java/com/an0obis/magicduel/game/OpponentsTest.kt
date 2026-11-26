@@ -15,10 +15,23 @@ class OpponentsTest {
     }
 
     @Test
-    fun firstMageIsTenTimesSlowerThanTheOriginalFirstBot() {
+    fun firstMageCasts12sAndWaits28s() {
         val first = Opponents.forLevel(2)
-        assertEquals(1.5f * 10, first.castTime, 0.001f)
-        assertEquals(2.8f * 10, first.idleTime, 0.001f)
+        assertEquals(12f, first.castTime, 0.001f)
+        assertEquals(28f, first.idleTime, 0.001f)
+    }
+
+    @Test
+    fun theSpeedUpIsBiggestAtTheBottomOfTheLadder() {
+        // Mage 2 is 20% faster than mage 1; each next step is smaller, approaching 5%.
+        assertEquals(0.8f, Opponents.speed(1), 0.0001f)
+        var previousStep = 0f
+        for (k in 1..40) {
+            val step = Opponents.speed(k) / Opponents.speed(k - 1)
+            assertTrue("step $k", step > previousStep)
+            assertTrue("step $k", step < Opponents.LAST_SPEED_STEP)
+            previousStep = step
+        }
     }
 
     @Test

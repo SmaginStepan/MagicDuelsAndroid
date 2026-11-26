@@ -1,7 +1,7 @@
 # Animated globes and projectiles (Midjourney "Animate")
 
-All six globes and all six projectiles are animated. The game picks up an animation automatically
-when its sheet exists in `app/src/main/res/drawable-nodpi` (otherwise it uses the still image).
+All six globes and all six projectiles are animated, and the game needs their sheets in
+`app/src/main/res/drawable-nodpi` (the old still images were removed: they were never drawn).
 
 ## Comets, variants and the freeze (2026-11-26)
 

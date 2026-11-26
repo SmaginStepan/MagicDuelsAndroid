@@ -72,7 +72,6 @@ private object Pal {
     val DAMAGE = 0xFFFF8A96.toInt()
     val HP_BACK = 0xFF2A2045.toInt()
     val HP_TRAIL = 0xFFFFF1C9.toInt()
-    val PLAYER_ROBE = 0xFF2F6FD0.toInt()
 }
 
 /**
@@ -425,10 +424,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         queueShift = 0f
     }
 
-    /** Starts decoding the sprite sheets this duel may need: your defeat and the bot's cast. */
+    /**
+     * Frees the sprite sheets of earlier duels and starts decoding the bot's cast. Your collapse is
+     * decoded only once you're losing (see update), since most duels don't need it.
+     */
     private fun prepareSprites() {
-        art.prepareSheet(avatar.defeatRes)
-        enemyAvatar?.let { art.prepareSheet(it.castRes) }
+        val botCast = enemyAvatar?.castRes
+        art.retainSheets(setOfNotNull(botCast))
+        botCast?.let { art.prepareSheet(it) }
     }
 
     /** A fresh duel at the current level; level 1 runs the tutorial until it has been beaten once. */
@@ -494,6 +497,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (screen != Screen.BATTLE || dialog != null) return
         battle.update(dt)
         for (event in battle.drainEvents()) onEvent(event)
+        // Your collapse is only needed if you lose: decode it once you're down to half your HP.
+        if (battle.player.hp * 2 <= battle.player.maxHp) art.prepareSheet(avatar.defeatRes)
         tutorial?.update(dt)
         if (tutorial is WallTutorial && tutorial?.done == true && !wallTutorialDone) {
             wallTutorialDone = true
@@ -1099,7 +1104,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (anim != null) {
             // Like yours, the clip lasts as long as the bot's quickest cast (but at most BOT_CAST_ANIM_MAX:
             // bots cast slowly) and ends as the shot leaves; until it starts the bot stands still.
-            clipT = castClipT(e, min(Rules.shortestCastTime(e.baseCastTime), BOT_CAST_ANIM_MAX))
+            clipT = castClipT(e, min(e.shortestCastTime, BOT_CAST_ANIM_MAX))
             enemyLastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
             enemyLastCastAnim = anim
             enemyCastEndedAt = -1f
@@ -1202,7 +1207,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         for (r in 0 until Rules.ROWS) for (col in 0 until Rules.COLS) {
             c.drawCircle(cellX(col.toFloat()), cellY(r.toFloat()), 0.36f * fu, fill)
         }
-        // Telegraph: the column a caster is raising walls in glows.
+        // Telegraph: the column a caster is raising walls in glows, with the seconds until the walls
+        // rise at its top (the top cell is always empty while walls are cast into the column).
         for (side in Side.entries) {
             val caster = battle.caster(side)
             val column = caster.castWallColumn
@@ -1212,6 +1218,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             rect.set(x0 + 0.04f * fu, fieldTop + 0.02f * fu, x0 + 0.96f * fu, fb - 0.02f * fu)
             fill.color = withAlpha(WALL_COLOR, (14 + 40 * caster.castProgress * pulse).toInt())
             c.drawRoundRect(rect, 0.2f * u, 0.2f * u, fill)
+            drawCountdown(c, rect.centerX(), rect.top + 0.2f * u, WALL_COLOR, caster.castTime * (1f - caster.castProgress))
         }
     }
 
@@ -1323,7 +1330,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /**
      * The seconds [eta] until a shot reaches the field: a small, quiet number at the bottom edge
      * ([bottom]) of the glowing lane strip, in a soft tint of the element's colour. No background,
-     * border or animation, so it informs without pulling the eye.
+     * border or animation, so it informs without pulling the eye. Wall casts show one too, at the top
+     * of their glowing column: the seconds until the walls rise.
      */
     private fun drawCountdown(c: Canvas, cx: Float, bottom: Float, color: Int, eta: Float) {
         val size = 0.21f * u
@@ -2131,7 +2139,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             drawClip(c, defeat, endTimer / DEFEAT_ANIM_TIME, frame, avatarPaint)
             lastCastAnim = null
         } else if (anim != null) {
-            clipT = castClipT(p, Rules.shortestCastTime(p.baseCastTime))
+            clipT = castClipT(p, p.shortestCastTime)
             lastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
             lastCastAnim = anim
             castEndedAt = -1f

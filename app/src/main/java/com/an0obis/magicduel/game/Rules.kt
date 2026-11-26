@@ -19,6 +19,13 @@ object Rules {
     /** The player's base cast time; casting into a lane takes longer, see [castTime]. */
     const val PLAYER_CAST_TIME = 2.7f
 
+    /**
+     * Every cast of yours, spells and walls, takes this share of the times below ([castTime],
+     * [wallCastTime]): 20% quicker, so 7.56 s into lane 1 down to 3.51 s into lane 5, and 9.45 s for
+     * walls. Bots cast at the full times.
+     */
+    const val PLAYER_CAST_SCALE = 0.8f
+
     /** Length of a bot's visible, repeating spell order. */
     const val BOT_SEQUENCE_LENGTH = 5
 
@@ -73,7 +80,8 @@ object Rules {
 
     /**
      * Conjuring walls takes this many times as long as the caster's slowest spell (into lane 1):
-     * 1.25 × 9.45 s ≈ 11.8 s for the player, clearly longer than any spell cast.
+     * 1.25 × 9.45 s ≈ 11.8 s at full speed (9.45 s for the player, whose casts are quicker), clearly
+     * longer than any spell cast.
      */
     const val WALL_CAST_FACTOR = 1.25f
 

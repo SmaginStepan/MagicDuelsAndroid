@@ -6,6 +6,8 @@
 #   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_01  enemy: art/enemies/anim/bot_01/cast1/,
 #       defeat/ -> bot_01.webp, bot_01_cast1.webp, bot_01_defeated.webp
 #   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar dummy -NoIdle   dummy: defeat/ -> dummy_defeated.webp
+#   -PocketMin 4 also removes smaller enclosed bits of background (the sorceress: see PROMPTS.md)
+#   -Shadow removes a pale ground shadow under the feet (bot_02)
 #
 # Each clip folder holds frame_00..NN.png. The white background is removed by flood-filling from the
 # image border through pixels close to the background colour, with a soft edge and the colour
@@ -13,7 +15,7 @@
 # through, so a pale glowing crystal stays. Every frame of every clip shares one crop, so the idle pose,
 # the animations and the defeated image line up exactly.
 param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
-      [switch]$DefeatSheet, [switch]$NoIdle)
+      [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -28,6 +30,10 @@ using System.Runtime.InteropServices;
 
 public static class AvatarCut {
     const double Hard = 32, Soft = 84;   // colour distance from the background: <= Hard gone, >= Soft solid
+    // Enclosed background pockets: patches seeded by pixels closer than PocketSeed to the background
+    // colour, removed when at least PocketMin pixels (see Cut).
+    static double PocketSeed = 18; static int PocketMin = 12;
+    static bool Shadow = false;   // remove a pale ground shadow under the feet (see Cut)
 
     static byte[] Read(Bitmap b) {
         BitmapData d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -77,24 +83,51 @@ public static class AvatarCut {
         }
         // Background enclosed by the figure or its magic (a swirl closing around white, a gap between
         // hair and collar): any patch of near-white the border fill didn't reach is background too,
-        // down to a dozen pixels. Crystal highlights are coloured, not white, so they stay.
+        // down to a dozen pixels. Crystal highlights are coloured, not white, so they stay. Pockets also
+        // join through corners: a crack of background between two folds can be one pixel wide and
+        // run diagonally (the sorceress's robe), which side-by-side links would split into specks.
         bool[] seen = new bool[W * H];
         var comp = new List<int>();
         for (int s = 0; s < W * H; s++) {
-            if (reached[s] || seen[s] || dist[s] >= 18) continue;
+            if (reached[s] || seen[s] || dist[s] >= PocketSeed) continue;
             comp.Clear();
             q.Enqueue(s); seen[s] = true;
             while (q.Count > 0) {
                 int k = q.Dequeue(); comp.Add(k);
                 int x = k % W, y = k / W;
-                int[] nb = { x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, y > 0 ? k - W : -1, y < H - 1 ? k + W : -1 };
-                foreach (int n in nb) if (n >= 0 && !seen[n] && !reached[n] && dist[n] < Soft) { seen[n] = true; q.Enqueue(n); }
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                    int xx = x + dx, yy = y + dy;
+                    if ((dx == 0 && dy == 0) || xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+                    int n = yy * W + xx;
+                    if (!seen[n] && !reached[n] && dist[n] < Soft) { seen[n] = true; q.Enqueue(n); }
+                }
             }
-            if (comp.Count >= 12) foreach (int k in comp) reached[k] = true;
+            if (comp.Count >= PocketMin) foreach (int k in comp) reached[k] = true;
+        }
+        // A ground shadow Midjourney drew anyway (pale warm grey, a band under the feet): with -Shadow,
+        // grow the background into pale, nearly colourless pixels in the bottom fifth of the frame,
+        // and drop them completely. Robes, brass and boots are either coloured or dark, so they stay.
+        bool[] shadow = new bool[W * H];
+        if (Shadow) {
+            for (int k = 0; k < W * H; k++) if (reached[k] && k / W >= H * 4 / 5) q.Enqueue(k);
+            while (q.Count > 0) {
+                int k = q.Dequeue();
+                int x = k % W, y = k / W;
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                    int xx = x + dx, yy = y + dy;
+                    if (xx < 0 || xx >= W || yy >= H || yy < H * 4 / 5) continue;
+                    int n = yy * W + xx;
+                    if (reached[n] || shadow[n]) continue;
+                    int i = n * 4, mx = Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])), mn = Math.Min(px[i], Math.Min(px[i + 1], px[i + 2]));
+                    // Greyer when darker; the pale part right under the figure picks up a warm tint from it.
+                    if ((mx >= 110 && mx - mn <= 40) || (mx >= 120 && mx - mn <= 50) || (mx >= 145 && mx - mn <= 52)) { shadow[n] = true; q.Enqueue(n); }
+                }
+            }
         }
         byte[] o = new byte[W * H * 4];
         for (int k = 0; k < W * H; k++) {
             int i = k * 4;
+            if (shadow[k]) continue;
             double a = reached[k] ? Math.Min(1.0, Math.Max(0.0, (dist[k] - Hard) / (Soft - Hard))) : 1.0;
             if (a <= 0) continue;
             for (int c = 0; c < 3; c++) o[i + c] = (byte)Math.Min(255, Math.Max(0, (px[i + c] - (1 - a) * bg[c]) / a));
@@ -159,7 +192,8 @@ public static class AvatarCut {
     // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
     // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
     // defeatIndex) unless null. All share one crop.
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols) {
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow) {
+        PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow;
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
         foreach (string dir in dirs) {
@@ -209,5 +243,5 @@ $sheets = @($dirs | ForEach-Object {
 })
 $idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
 $defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
-[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols)
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent)
 & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })

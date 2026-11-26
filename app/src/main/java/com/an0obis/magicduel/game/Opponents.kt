@@ -35,8 +35,8 @@ data class Opponent(
 
 /**
  * The endless ladder: two training dummies, then mages that level up.
- * Each mage casts and waits [SPEED_UP] times as long as the previous one (never below the floors)
- * and has a little more HP.
+ * Each mage casts and waits a little shorter than the previous one (see [speed]; never below the
+ * floors) and has a little more HP.
  */
 object Opponents {
     private val dummies = listOf(
@@ -47,16 +47,34 @@ object Opponents {
     /** How many training dummies open the ladder (the k-th mage is level dummyCount + k). */
     val dummyCount: Int get() = dummies.size
 
-    /** The first mage: 10× slower than the original first bot (which cast 1.5 s and waited 2.8 s). */
-    const val FIRST_CAST_TIME = 15f
+    /** The first mage's base cast (12 s, 20% under the 15 s it was) and its wait between shots. */
+    const val FIRST_CAST_TIME = 12f
     const val FIRST_IDLE_TIME = 28f
 
-    /** Each next mage is this factor of the previous one's cast and wait time (0.85 = 15% faster). */
-    const val SPEED_UP = 0.85f
+    /**
+     * Each next mage casts and waits this factor of the previous one's times. The steps are biggest
+     * at the bottom of the ladder and shrink toward [LAST_SPEED_STEP]: 20% faster after the first
+     * mage, 18.5% after the second, … about 10% by mage 11 and 5% far up, so the early levels speed
+     * up quickly and the top speed comes around level 28 instead of level 21.
+     */
+    const val FIRST_SPEED_STEP = 0.80f
+    const val LAST_SPEED_STEP = 0.95f
+
+    /** How quickly the steps shrink: each step's gap to [LAST_SPEED_STEP] is this factor of the previous one's. */
+    const val SPEED_STEP_EASING = 0.9f
+
+    /** Mage [k]'s cast and wait times as a share of the first mage's (1 for k = 0). */
+    fun speed(k: Int): Float {
+        var s = 1f
+        for (i in 0 until k) s *= LAST_SPEED_STEP - (LAST_SPEED_STEP - FIRST_SPEED_STEP) * SPEED_STEP_EASING.pow(i)
+        return s
+    }
+
     const val MIN_CAST_TIME = 0.8f
     const val MIN_IDLE_TIME = 0.6f
 
-    const val FIRST_MAGE_HP = 90
+    /** The first mage's HP (half the 90 it was); each next one has [HP_PER_LEVEL] more, up to [MAX_HP]. */
+    const val FIRST_MAGE_HP = 45
     const val HP_PER_LEVEL = 8
     const val MAX_HP = 250
 
@@ -65,7 +83,7 @@ object Opponents {
         "Magus", "Sorcerer", "Warlock", "Archmage", "Grand Archmage",
     )
     private val names = listOf(
-        "Vell", "Morra", "Ozrin", "Tamsa", "Brannoc", "Ilvee",
+        "Cogwin", "Rustjaw", "Ozrin", "Tamsa", "Brannoc", "Ilvee",
         "Corvath", "Senna", "Druven", "Ysolde", "Harrow", "Quill",
     )
     private val robes = listOf(0xFF7A3E9D, 0xFFB0432F, 0xFF2F7D6B, 0xFF8E2C3A, 0xFF9A7A1F, 0xFF3E4FA8)
@@ -74,7 +92,7 @@ object Opponents {
     fun forLevel(level: Int): Opponent {
         if (level < dummies.size) return dummies[level.coerceAtLeast(0)]
         val k = level - dummies.size
-        val speed = SPEED_UP.pow(k)
+        val speed = speed(k)
         return Opponent(
             name = "${titles[min(k / 2, titles.lastIndex)]} ${names[k % names.size]}",
             kind = AvatarKind.MAGE,

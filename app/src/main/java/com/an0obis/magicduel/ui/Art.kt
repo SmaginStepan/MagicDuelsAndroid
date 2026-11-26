@@ -152,8 +152,8 @@ class Art(private val res: Resources, private val packageName: String) {
     private val ringClip = Path()
 
     // ---------------------------------------------------------------- Midjourney sprites
-    // res/drawable-nodpi: orb_* (globes), proj_* (flying projectiles, head on the right),
-    // btn_* (spell buttons), sym_* (element symbols). Sources and prompts are in the project's art/ folder.
+    // res/drawable-nodpi: btn_* (spell buttons), sym_* (element symbols); globes and shots are animation
+    // sheets only (below). Sources and prompts are in the project's art/ folder.
 
     private enum class Kind { GLOBE, PROJECTILE, BUTTON, SYMBOL, FREEZE, HIT }
 
@@ -162,23 +162,7 @@ class Art(private val res: Resources, private val packageName: String) {
 
     private fun source(kind: Kind, e: Element): Bitmap = sources.getOrPut(kind to e) {
         val id = when (kind) {
-            Kind.GLOBE -> when (e) {
-                Element.FIRE -> R.drawable.orb_fire
-                Element.WATER -> R.drawable.orb_water
-                Element.EARTH -> R.drawable.orb_earth
-                Element.AIR -> R.drawable.orb_air
-                Element.LIGHTNING -> R.drawable.orb_lightning
-                Element.SHADOW -> R.drawable.orb_shadow
-            }
-            Kind.PROJECTILE -> when (e) {
-                Element.FIRE -> R.drawable.proj_fire
-                Element.WATER -> R.drawable.proj_water
-                Element.EARTH -> R.drawable.proj_earth
-                Element.AIR -> R.drawable.proj_air
-                Element.LIGHTNING -> R.drawable.proj_lightning
-                Element.SHADOW -> R.drawable.proj_shadow
-            }
-            Kind.FREEZE, Kind.HIT -> error("$kind animations have no still image")
+            Kind.GLOBE, Kind.PROJECTILE, Kind.FREEZE, Kind.HIT -> error("$kind is an animation, not a still image")
             Kind.BUTTON -> when (e) {
                 Element.FIRE -> R.drawable.btn_fire
                 Element.WATER -> R.drawable.btn_water
@@ -202,23 +186,22 @@ class Art(private val res: Resources, private val packageName: String) {
     /**
      * Draws a crystal globe with the element sealed inside into [dst] (square), with [paint] (its
      * alpha fades the whole globe): a soft aura in the element's colour and the globe at 88% of the
-     * size. If the element has animation sheets, [look] picks one of its variants and [frame] the
-     * animation frame (any number; it wraps around); otherwise the still image is drawn.
+     * size. [look] picks one of the element's animation variants and [frame] the animation frame
+     * (any number; it wraps around).
      */
     fun drawGlobe(c: Canvas, e: Element, dst: RectF, frame: Int, look: Int, paint: Paint) {
         c.drawBitmap(aura(e), null, dst, paint)
         val inset = dst.width() * 0.06f
         inner.set(dst.left + inset, dst.top + inset, dst.right - inset, dst.bottom - inset)
-        val a = anim(Kind.GLOBE, e, variant(Kind.GLOBE, e, look))
-        if (a != null) a.draw(c, frame, inner, paint) else c.drawBitmap(source(Kind.GLOBE, e), null, inner, paint)
+        sheet(Kind.GLOBE, e, look).draw(c, frame, inner, paint)
     }
 
-    /**
-     * The flying projectile for [e], head on the right; [look] picks an animation variant. Elements
-     * without animation sheets get their still image as a one-frame animation.
-     */
-    fun projectile(e: Element, look: Int): Anim =
-        anim(Kind.PROJECTILE, e, variant(Kind.PROJECTILE, e, look)) ?: stills.getOrPut(e) { Anim(source(Kind.PROJECTILE, e), 1, 1) }
+    /** The flying projectile for [e], head on the right; [look] picks an animation variant. */
+    fun projectile(e: Element, look: Int): Anim = sheet(Kind.PROJECTILE, e, look)
+
+    /** Every element has globe and shot sheets (orb_<element>_anim…, proj_<element>_anim…). */
+    private fun sheet(kind: Kind, e: Element, look: Int): Anim =
+        checkNotNull(anim(kind, e, variant(kind, e, look))) { "no $kind animation sheet for $e" }
 
     /**
      * The landed shot freezing into a globe: [FREEZE_COLS] × [FREEZE_ROWS] frames, [FREEZE_ASPECT]
@@ -256,7 +239,7 @@ class Art(private val res: Resources, private val packageName: String) {
     // Optional sheets, see art/ANIMATIONS.md:
     // - orb_<element>_anim, _anim2 … and proj_<element>_anim, _anim2 …: variants of a Midjourney
     //   "Loop" video, 24 frames in a 6×4 grid. Each globe and shot shows one variant, picked by its
-    //   look number. Elements without a sheet simply use the still image.
+    //   look number.
     // - freeze_<element> and hit_<element>: 16 frames in a 4×4 grid.
     // Each sheet is decoded once, only when an element in play needs it, and kept whole; frames are
     // drawn from it. With [hardwareBitmaps] sheets live only in GPU memory.
@@ -268,7 +251,6 @@ class Art(private val res: Resources, private val packageName: String) {
     private val variantCounts = ConcurrentHashMap<Pair<Kind, Element>, Int>()
     private val anims = ConcurrentHashMap<String, Any>()
     private val noSheet = Any()
-    private val stills = HashMap<Element, Anim>()
     private val auras = HashMap<Element, Bitmap>()
     private val inner = RectF()
 
@@ -417,11 +399,14 @@ class Art(private val res: Resources, private val packageName: String) {
     private val images = HashMap<Int, Bitmap>()
     private val opaque = HashMap<Int, Rect>()
 
+    /** Frees every decoded sheet but [keep]: a new duel needs only its own (each is about 13 MB). */
+    fun retainSheets(keep: Set<Int>) {
+        sheets.keys.retainAll(keep)
+    }
+
     /** Starts decoding the 48-frame sheet [id] in the background (see [sheetIfReady]). */
     fun prepareSheet(id: Int) {
         if (sheets.containsKey(id) || !sheetsLoading.add(id)) return
-        // Keep only a few in memory (about 13 MB each): the current bot's cast and your defeat.
-        if (sheets.size >= 4) sheets.clear()
         Thread {
             val opts = BitmapFactory.Options().apply {
                 inScaled = false

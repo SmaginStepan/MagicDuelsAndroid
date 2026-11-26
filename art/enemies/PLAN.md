@@ -39,7 +39,8 @@ movement` and `static camera, no camera movement, same plain white background`:
 
 | Bot | Level | Look | Image job (pick) | Cast video | Defeat video |
 |---|---|---|---|---|---|
-| bot_01 | 3 | young apprentice, worn grey-brown robe, one clockwork brass forearm, teal temple implant, short staff with a teal crystal | b1e4c670-70b7-48b7-a57d-0d0aea01b962 (2) | 08df9a3c-ce8f-4fc0-b8e2-4030f8cca462 (3) | 0049724e-0ff6-49c2-9079-596cdf26d08c (2), last frame |
+| bot_01 | 3 | **Novice Cogwin**: young apprentice, worn grey-brown robe, one clockwork brass forearm, teal temple implant, short staff with a teal crystal | b1e4c670-70b7-48b7-a57d-0d0aea01b962 (2) | 08df9a3c-ce8f-4fc0-b8e2-4030f8cca462 (3) | 0049724e-0ff6-49c2-9079-596cdf26d08c (2), last frame |
+| bot_02 | 4 | **Novice Rustjaw**: lean shaved-head apprentice warlock, rust-red hooded robe, brass jaw plate, amber eye lens, brass clockwork knee brace, crooked staff with an amber crystal | 02481782-93be-4002-b8ad-024d558f1ad0 (1) | fdcafb37-2532-4fd0-ae7f-a99c8013947c (2) | f4d2433e-ec4e-42e9-b631-1d398b0bfe0c (2), last frame |
 
 Dummies: one defeated image for both, `dummy_defeated.webp`: the last frame of
 b9db9d36-02df-4b59-a7fc-67ab0431de2c (4) (`… is struck by a powerful magic blast, its wooden post snaps
@@ -47,10 +48,27 @@ and it topples over …`).
 
 ## Making a bot
 
-1. Imagine with the prompt pattern; pick the image. Animate its cast and its defeat.
-2. Pull the frames (`anim/bot_kk/cast1/frame_00..47.png`; for the defeat only the last frame,
+The standard sequence for the next opponent (mage k, `bot_kk`), with the user choosing at each step:
+
+1. **Image.** Imagine two prompts from the prompt pattern (8 images), a step more impressive than the
+   last bot, with a different accent colour. Show them in one labelled sheet (A1–B4) and let the user
+   pick; leave out any that is cropped or doesn't face left.
+2. **Name.** Offer three or four names that fit the picked look (its cybernetics, colour, character),
+   each with its Russian form, and let the user pick. The title before it (Novice, Apprentice …) comes
+   from the level.
+3. **Animations.** Animate the cast and the defeat (no Loop, Low motion). Show the cast variations as
+   frame strips and the defeats with their last frame, and let the user pick one of each: the cast
+   should end on the throw, the defeat's last frame becomes the defeated image.
+4. **Cut.** Pull the frames (`anim/bot_kk/cast1/frame_00..47.png`; for the defeat only the last frame,
    `anim/bot_kk/defeat/frame_00.png`; not in git), then
    `tools/art/cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_kk` writes `bot_kk.webp` (idle),
-   `bot_kk_cast1.webp` (8×6 sheet) and `bot_kk_defeated.webp`, all with one crop.
-3. Add it to `EnemyAvatars.all` in `ui/Avatars.kt` with its crystal position (`tipX`, `tipY`, measured
-   on the idle frame) and glow colour. Mages past the last one made still use the drawn mage.
+   `bot_kk_cast1.webp` (8×6 sheet) and `bot_kk_defeated.webp`, all with one crop. If Midjourney drew a
+   ground shadow anyway (bot_02), add `-Shadow`: it clears the pale, nearly colourless band under the
+   feet. Check the result on a dark background for leftover white specks (`-PocketMin`).
+5. **Add it.** Add it to `EnemyAvatars.all` in `ui/Avatars.kt` with its crystal position (`tipX`,
+   `tipY`, measured on the idle frame) and glow colour, and its name as item k of `mage_names` in
+   `res/values`, `values-ru` and `values-es` and in `Opponents.names` (there are 12 names so far and
+   they repeat from mage 13, so every new bot gets a new one). Mages past the last one made still use
+   the drawn mage and their old names.
+6. **Record and check.** Add its row to the table above (name, look, image job, cast and defeat
+   videos), build, install and check it on the phone.

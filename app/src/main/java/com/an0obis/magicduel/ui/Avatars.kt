@@ -76,6 +76,7 @@ object EnemyAvatars {
     /** By mage: the first mage (game level 3) wears the first. Mages without one yet are drawn. */
     val all = listOf(
         EnemyAvatar("bot_01", R.drawable.bot_01, R.drawable.bot_01_cast1, R.drawable.bot_01_defeated, 0.22f, 0.74f, 0xFF3FE0C8.toInt()),
+        EnemyAvatar("bot_02", R.drawable.bot_02, R.drawable.bot_02_cast1, R.drawable.bot_02_defeated, 0.19f, 0.25f, 0xFFFFA63C.toInt()),
     )
 
     /** The avatar of the k-th mage (0 = the first), or null if it has none yet. */

@@ -40,9 +40,10 @@ data class WallSpell(val column: Int) : Move
 /**
  * A duellist: hit points plus the move currently being cast. Casting a spell into a lane takes
  * [Rules.castTime] of the caster's [baseCastTime] (longer for the top lanes); a wall takes
- * [Rules.wallCastTime], longer than any spell.
+ * [Rules.wallCastTime], longer than any spell; both times [castScale] (the player's casts are
+ * quicker, [Rules.PLAYER_CAST_SCALE]).
  */
-class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float) {
+class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float, val castScale: Float = 1f) {
     var hp = maxHp
         private set
 
@@ -67,13 +68,19 @@ class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float) {
     val isCasting: Boolean get() = castMove != null
     val castProgress: Float get() = if (isCasting) (castT / castTime).coerceIn(0f, 1f) else 0f
 
+    /** How long casting [move] takes this caster. */
+    fun castTimeOf(move: Move): Float = castScale * when (move) {
+        is Spell -> Rules.castTime(baseCastTime, move.shot.lane)
+        is WallSpell -> Rules.wallCastTime(baseCastTime)
+    }
+
+    /** This caster's quickest spell cast (into the bottom lane); avatars play their cast clips at this length. */
+    val shortestCastTime: Float get() = castScale * Rules.shortestCastTime(baseCastTime)
+
     internal fun startCast(move: Move) {
         castMove = move
         castT = 0f
-        castTime = when (move) {
-            is Spell -> Rules.castTime(baseCastTime, move.shot.lane)
-            is WallSpell -> Rules.wallCastTime(baseCastTime)
-        }
+        castTime = castTimeOf(move)
     }
 
     internal fun startCast(element: Element, lane: Int) = startCast(Spell(element, lane))
@@ -188,7 +195,7 @@ class Battle(
     val elements: List<Element> = Element.active(opponent.elementCount)
     val board: Board = startBoard ?: Board.randomStart(random, elements)
     val spells = SpellGrid(random, elements)
-    val player = Caster(Side.PLAYER, Rules.PLAYER_HP, Rules.PLAYER_CAST_TIME)
+    val player = Caster(Side.PLAYER, Rules.PLAYER_HP, Rules.PLAYER_CAST_TIME, Rules.PLAYER_CAST_SCALE)
     val enemy = Caster(Side.ENEMY, opponent.hp, opponent.castTime)
 
     private val plannedMoves = ArrayDeque<Move>()

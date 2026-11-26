@@ -14,7 +14,8 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Tap a spell: your mage casts it (animated). You can't cast again until it finishes. Casting takes
   longer for the top lanes: your base 2.7 s plus the lane's time (lane 1: 6.84 s, lane 2: 5.58 s,
   lane 3: 4.32 s, lane 4: 3.045 s, lane 5: 1.785 s, `Rules.LANE_TIME`) minus the short flight
-  (0.09 s), so 9.45 s into lane 1, 8.19 s, 6.93 s, 5.65 s and 4.39 s into lane 5 (`Rules.castTime`).
+  (0.09 s): 9.45 s, 8.19 s, 6.93 s, 5.65 s and 4.39 s (`Rules.castTime`). **Your casts are 20% quicker**
+  (`Rules.PLAYER_CAST_SCALE`): 7.56 s into lane 1, 6.55 s, 5.54 s, 4.52 s and 3.51 s into lane 5.
   Lane 1 takes 5.06 s longer than lane 5: 50% more than the original 3.37 s, around the same middle lane.
 - While a mage casts, its target lane lights up with a **countdown**: the seconds until the shot reaches
   the field, a small quiet number at the bottom of the lane strip (no border or animation). The bot's
@@ -56,9 +57,10 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 ## Walls
 - Three **wall buttons** sit above the field, over the middle columns 2–4 (`Rules.WALL_COLUMNS`); the edge
   columns 1 and 5 can't be walled, by you or the bot. Tapping one casts walls: a long cast
-  (1.25× the caster's slowest spell, `Rules.WALL_CAST_FACTOR`: about 11.8 s for you, longer than any spell)
+  (1.25× the caster's slowest spell, `Rules.WALL_CAST_FACTOR`: about 9.45 s for you, longer than any spell)
   that takes your one casting slot like a spell and can be cancelled the same way. The spell grid isn't
-  touched. While it's cast, the button sits in a glyph ring and the column glows.
+  touched. While it's cast, the button sits in a glyph ring and the column glows, with a **countdown**
+  at its top like the lanes': the seconds until the walls rise (yours and the bot's).
 - A wall button is **disabled (grey and faded) while the cell right below it** (the column's top cell) holds a wall or a
   globe, or while the bot is casting walls into that same column (its glyph ring shows around the
   button), and lights up again when it can be used. Walls are locked on level 1 (the tutorial dummy):
@@ -112,15 +114,18 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   randomly in advance. The first one is cast next; when it has been cast it leaves the queue and a newly
   planned random shot joins at the end. Bots follow the same impact rules, except that their shots push
   full rows instead of backfiring (see Impact).
-- The first mage casts for 15 s and waits 28 s between shots (10× slower than the original first bot).
+- The first mage casts for 12 s (its base, 20% under the 15 s it was) and waits 28 s between shots.
   Like yours, a bot's cast also takes its lane's time on top (minus the short flight), so its shots
-  reach the field when they always did.
-  Each next mage casts and waits 15% shorter, down to a floor of 0.8 s cast / 0.6 s wait, and has 8 more HP
-  (90 HP at first, at most 250). Around level 17 they are as fast as the original first bot.
+  reach the field when they always did (bots don't get your 20% quicker casting).
+  Each next mage casts and waits shorter, by the most at the bottom of the ladder (`Opponents.speed`):
+  20% after the first mage, 18.5% after the second, then smaller and smaller steps, about 10% by mage 11
+  and towards 5% far up. Base cast times: 12, 9.6, 7.8, 6.5, 5.5, 4.6, 4.0 s … 2.4 s at level 13, 1.6 s
+  at level 17, 1.0 s at level 23, and the floor of 0.8 s cast / 0.6 s wait around levels 28 / 43. Each
+  also has 8 more HP (45 HP at first, half the 90 it was; at most 250, from level 29).
 - Titles rise every two levels: Novice, Apprentice, Initiate, Adept, Conjurer, Magus, Sorcerer, Warlock,
   Archmage, Grand Archmage.
 - Mages have Midjourney avatars with cybernetic parts that grow level by level (`art/enemies/PLAN.md`;
-  only the first is made so far, later mages use the drawn mage). A bot's avatar plays its cast animation
+  the first two are made so far, later mages use the drawn mage). A bot's avatar plays its cast animation
   over each cast and throws the magic itself.
 - Win to go up a level; lose to retry the same level. Your level is saved on the phone.
 - The end card shows the loser's **defeated pose**: a beaten bot sinks into it on the field, the dummies
