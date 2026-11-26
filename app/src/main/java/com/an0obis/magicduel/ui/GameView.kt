@@ -16,6 +16,9 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -132,6 +135,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var soundOn = prefs.getBoolean(KEY_SOUND, true)
     private var playerName = prefs.getString(KEY_NAME, "") ?: ""
 
+    /** Your avatar (Options or a tap on your mage opens "Choose your avatar"). */
+    private var avatar = Avatars.byId(prefs.getString(KEY_AVATAR, null))
+
+    /** Which of the avatar's three cast animations the current cast plays (picked at random per cast). */
+    private var castAnim = 0
+
+    // The pose your avatar was in when its last cast ended, fading into the idle pose (see drawPlayerAvatar).
+    private var lastCastAnim: Art.Anim? = null
+    private var lastCastFrame = 0
+    private var castEndedAt = -1f
+
     /** The game's texts in [language], whatever language the phone uses. */
     private var str: Resources = localized(language)
 
@@ -155,9 +169,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     // ---- screens: the start menu (with small dialogs) and the duel ----
     private enum class Screen { MENU, BATTLE }
-    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS }
+    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS, AVATAR }
     private var screen = Screen.MENU
     private var dialog: Dialog? = null
+
+    /** The "Choose your avatar" popup was opened from Options (closing it goes back there). */
+    private var avatarFromOptions = false
     private var dialogOpenedAt = 0f
     private val menuButtons = LinkedHashMap<String, RectF>()
     private val dialogButtons = LinkedHashMap<String, RectF>()
@@ -243,6 +260,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val dashed = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD) }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    /** Draws your avatar (alpha fades it, a colour filter flashes it). */
+    private val avatarPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    /** Where a tap opens "Choose your avatar" in a duel: the middle of your avatar's frame. */
+    private val playerAvatarRect = RectF()
 
     /** Draws bitmaps in greys only: disabled wall buttons. */
     private val greyPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
@@ -347,6 +370,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         // as GPU-only bitmaps when this view draws with hardware acceleration.
         art.hardwareBitmaps = isHardwareAccelerated
         art.preload(battle.elements)
+        art.prepareAvatarCast(avatar, castAnim)
     }
 
     private fun resetEffects() {
@@ -374,6 +398,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun startBattle() {
         battle = Battle(Opponents.forLevel(level))
         art.preload(battle.elements)
+        art.prepareAvatarCast(avatar, castAnim)
         tutorial = when {
             level == 0 && !tutorialDone -> Tutorial()
             level == 1 && !wallTutorialDone -> WallTutorial()
@@ -397,6 +422,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             .putString(KEY_LANGUAGE, language)
             .putBoolean(KEY_SOUND, soundOn)
             .putString(KEY_NAME, playerName)
+            .putString(KEY_AVATAR, avatar.id)
             .apply()
     }
 
@@ -414,7 +440,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /** Android back: close a dialog, or leave the duel for the menu. Returns false to let the app close. */
     fun onBack(): Boolean = when {
-        dialog != null -> { dialog = if (dialog == Dialog.RESTART) Dialog.OPTIONS else null; true }
+        dialog != null -> { closeDialog(); true }
         screen == Screen.BATTLE -> { screen = Screen.MENU; true }
         else -> false
     }
@@ -423,7 +449,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private fun step(dt: Float) {
         clock += dt
-        if (screen != Screen.BATTLE) return // the duel waits while the menu is open
+        // The duel waits while the menu, or a popup over the duel ("Choose your avatar"), is open.
+        if (screen != Screen.BATTLE || dialog != null) return
         battle.update(dt)
         for (event in battle.drainEvents()) onEvent(event)
         tutorial?.update(dt)
@@ -520,7 +547,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         when (e) {
             // Tapping a spell: a plain, quiet button click (the bot taps nothing, so it is silent).
             is BattleEvent.CastStarted -> {
-                if (e.side == Side.PLAYER) sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                if (e.side == Side.PLAYER) {
+                    sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                    castAnim = Random.nextInt(avatar.castRes.size) // one of the avatar's three casts
+                    art.prepareAvatarCast(avatar, castAnim)
+                }
                 ringStyle[e.side.ordinal] = (ringStyle[e.side.ordinal] + 1) % Art.CAST_RING_STYLES
             }
             is BattleEvent.CastCancelled -> {
@@ -534,7 +565,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 texts += FloatText(s(R.string.cancelled), cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
             }
             is BattleEvent.WallCastStarted -> {
-                if (e.side == Side.PLAYER) sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                if (e.side == Side.PLAYER) {
+                    sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                    castAnim = Random.nextInt(avatar.castRes.size)
+                    art.prepareAvatarCast(avatar, castAnim)
+                }
                 ringStyle[e.side.ordinal] = (ringStyle[e.side.ordinal] + 1) % Art.CAST_RING_STYLES
             }
             is BattleEvent.WallCastCancelled -> {
@@ -568,8 +603,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 }
             }
             is BattleEvent.Launched -> {
-                val from = staffTip(e.side)
-                bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
+                // The bot's drawn mage shoots a bolt line from its staff to the lane; your avatar's cast
+                // animation already throws the magic, so no line is drawn for you.
+                if (e.side == Side.ENEMY) {
+                    val from = staffTip(e.side)
+                    bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
+                }
                 afterglow[e.side.ordinal] = 1f
                 lastCastColor[e.side.ordinal] = art.color(e.element)
                 sounds.play(Sounds.Fx.LAUNCH, 0.55f)
@@ -705,7 +744,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_POINTER_DOWN) return true
         val x = event.getX(event.actionIndex)
         val y = event.getY(event.actionIndex)
-        if (screen == Screen.MENU) {
+        // Popups (also "Choose your avatar" over the duel) take every tap while they're open.
+        if (screen == Screen.MENU || dialog != null) {
             onMenuTap(x, y)
             return true
         }
@@ -719,6 +759,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (battle.player.isCasting && RectF(cancelCastButton).apply { inset(-0.15f * u, -0.15f * u) }.contains(x, y)) {
             if (battle.cancelCast()) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            return true
+        }
+        // A tap on your mage opens "Choose your avatar" (the duel pauses meanwhile).
+        if (playerAvatarRect.contains(x, y)) {
+            avatarFromOptions = false
+            openDialog(Dialog.AVATAR)
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            sounds.play(Sounds.Fx.UI_CLICK, 0.8f)
             return true
         }
         for (col in Rules.WALL_COLUMNS) {
@@ -750,7 +798,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             when {
                 hit == "restart" -> restartGame()
                 hit == "cancel" -> openDialog(Dialog.OPTIONS) // the restart question comes from Options
-                hit == "ok" || hit == "close" -> dialog = null
+                hit == "ok" || hit == "close" -> closeDialog()
+                hit == "avatar_open" -> {
+                    avatarFromOptions = true
+                    openDialog(Dialog.AVATAR)
+                }
+                hit != null && hit.startsWith("avatar_") -> {
+                    avatar = Avatars.byId(hit.removePrefix("avatar_"))
+                    art.prepareAvatarCast(avatar, castAnim)
+                    save()
+                    closeDialog()
+                }
                 hit == "sound" -> {
                     soundOn = !soundOn
                     sounds.enabled = soundOn
@@ -762,6 +820,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 // A tap outside the card closes it ("coming soon" cards close on any tap).
                 open == Dialog.RESTART -> if (!dialogCard.contains(x, y)) openDialog(Dialog.OPTIONS)
                 open == Dialog.OPTIONS -> if (!dialogCard.contains(x, y)) dialog = null
+                open == Dialog.AVATAR -> if (!dialogCard.contains(x, y)) closeDialog()
                 else -> dialog = null
             }
             if (hit != null) {
@@ -801,7 +860,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (side == Side.PLAYER) PointF(playerX, playerFoot - playerH * 0.5f) else PointF(enemyX, enemyFoot - enemyH * 0.5f)
 
     private fun staffTip(side: Side): PointF =
-        if (side == Side.PLAYER) art.mageOrb(playerX, playerFoot, playerH, true, 1f)
+        if (side == Side.PLAYER) avatarFrame(RectF(), playerX).let { PointF(it.left + avatar.tipX * it.width(), it.top + avatar.tipY * it.height()) }
         else art.mageOrb(enemyX, enemyFoot, enemyH, false, 1f)
 
     // ================================================================ drawing
@@ -832,6 +891,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawTutorial(c)
         drawBanner(c)
         drawEndOverlay(c)
+        dialog?.let { drawDialog(c, it) } // "Choose your avatar" over the paused duel
     }
 
     private fun label(c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int, align: Paint.Align, alpha: Float = 1f) {
@@ -1515,6 +1575,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialogOpenedAt = clock
     }
 
+    /** Closes the open popup: the restart question and an avatar choice opened from Options go back to Options. */
+    private fun closeDialog() {
+        dialog = when {
+            dialog == Dialog.RESTART -> Dialog.OPTIONS
+            dialog == Dialog.AVATAR && avatarFromOptions -> Dialog.OPTIONS
+            else -> null
+        }
+        if (dialog != null) dialogOpenedAt = clock
+    }
+
     private fun setLanguage(code: String) {
         language = code
         str = localized(code)
@@ -1557,7 +1627,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val w = min(width - 1.6f * u, 7f * u)
         val pad = 0.35f * u
         val rowH = 0.8f * u
-        val h = 1.25f * u + 0.45f * u + rowH + 0.35f * u + 2 * (rowH + 0.3f * u) + 0.25f * u + rowH + 0.35f * u + rowH + pad
+        val avatarH = 3.6f * u
+        val h = 1.25f * u + 0.45f * u + rowH + 0.35f * u + 2 * (rowH + 0.3f * u) + avatarH + 0.3f * u + 0.25f * u + rowH + 0.35f * u + rowH + pad
         val cx = width / 2f
         val cy = height / 2f
         dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
@@ -1595,7 +1666,27 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val name = RectF(x1 - bw, y, x1, y + rowH)
         drawButton(c, name, displayName(), null, primary = false, small = true)
         dialogButtons["name"] = name
-        y += rowH + 0.3f * u + 0.25f * u
+        y += rowH + 0.3f * u
+        // Your avatar: the full figure on a card (name below, a soft glow in its colour); a tap opens
+        // "Choose your avatar".
+        label(c, s(R.string.avatar), x0, y + rowH / 2f + 0.1f * u, 0.3f * u, Pal.TEXT, Paint.Align.LEFT)
+        val av = RectF(x1 - bw, y, x1, y + avatarH)
+        fill.color = withAlpha(BLACK, 90)
+        c.drawRoundRect(av, 0.25f * u, 0.25f * u, fill)
+        fill.shader = RadialGradient(av.centerX(), av.top + avatarH * 0.42f, bw * 0.65f, withAlpha(avatar.glow, 70), withAlpha(avatar.glow, 0), Shader.TileMode.CLAMP)
+        c.drawRoundRect(av, 0.25f * u, 0.25f * u, fill)
+        fill.shader = null
+        val img = art.avatarIdle(avatar)
+        val ih = avatarH - 0.7f * u
+        val iw = ih * img.width / img.height
+        rect.set(av.centerX() - iw / 2f, av.top + 0.08f * u, av.centerX() + iw / 2f, av.top + 0.08f * u + ih)
+        c.drawBitmap(img, null, rect, bitmapPaint)
+        label(c, s(avatar.nameRes), av.centerX(), av.bottom - 0.25f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER)
+        stroke.color = withAlpha(GOLD, 150)
+        stroke.strokeWidth = 0.04f * u
+        c.drawRoundRect(av, 0.25f * u, 0.25f * u, stroke)
+        dialogButtons["avatar_open"] = av
+        y += avatarH + 0.3f * u + 0.25f * u
 
         val restart = RectF(x0, y, x1, y + rowH)
         drawButton(c, restart, s(R.string.restart_game), null, primary = false, small = true, danger = true)
@@ -1606,12 +1697,84 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialogButtons["close"] = close
     }
 
+    /**
+     * "Choose your avatar": a card per avatar (free and, later, paid ones) in a grid of two, each with
+     * its idle pose and name. Yours is outlined in gold. A last card says more avatars are coming.
+     * A tap on an avatar picks it and closes the popup.
+     */
+    private fun drawAvatarPicker(c: Canvas) {
+        val w = min(width - 1.2f * u, 7.6f * u)
+        val pad = 0.35f * u
+        val gap = 0.3f * u
+        val cols = 2
+        val cardW = (w - 2 * pad - (cols - 1) * gap) / cols
+        val cardH = cardW * 1.45f
+        val slots = Avatars.all.size + 1 // + "more avatars soon"
+        val rows = (slots + cols - 1) / cols
+        val h = 1.3f * u + rows * cardH + (rows - 1) * gap + 0.35f * u + 0.8f * u + pad
+        val cx = width / 2f
+        val cy = height / 2f
+        dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        val card = dialogCard
+        fill.color = Pal.CARD
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, fill)
+        stroke.color = GOLD
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, stroke)
+        label(c, s(R.string.choose_avatar), cx, card.top + 0.85f * u, 0.46f * u, GOLD, Paint.Align.CENTER)
+        val top = card.top + 1.3f * u
+        for (i in 0 until slots) {
+            val col = i % cols
+            val row = i / cols
+            val r = RectF(card.left + pad + col * (cardW + gap), top + row * (cardH + gap), 0f, 0f)
+            r.right = r.left + cardW
+            r.bottom = r.top + cardH
+            fill.color = withAlpha(BLACK, 90)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            val a = Avatars.all.getOrNull(i)
+            if (a == null) {
+                // More (paid) avatars will appear here.
+                stroke.color = withAlpha(WHITE, 40)
+                stroke.strokeWidth = 0.03f * u
+                c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+                wrap(s(R.string.avatar_more), 0.27f * u, cardW - 0.4f * u).forEachIndexed { k, line ->
+                    label(c, line, r.centerX(), r.centerY() + k * 0.38f * u, 0.27f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+                }
+                continue
+            }
+            // Soft light behind the figure, in the colour of its crystal.
+            fill.shader = RadialGradient(r.centerX(), r.top + cardH * 0.45f, cardW * 0.6f, withAlpha(a.glow, 70), withAlpha(a.glow, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            fill.shader = null
+            val img = art.avatarIdle(a)
+            val ih = cardH - 0.75f * u
+            val iw = ih * img.width / img.height
+            rect.set(r.centerX() - iw / 2f, r.top + 0.1f * u, r.centerX() + iw / 2f, r.top + 0.1f * u + ih)
+            c.drawBitmap(img, null, rect, bitmapPaint)
+            label(c, s(a.nameRes), r.centerX(), r.bottom - 0.3f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER)
+            if (!a.paid) label(c, s(R.string.avatar_free), r.right - 0.15f * u, r.top + 0.35f * u, 0.22f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+            val chosen = a.id == avatar.id
+            stroke.color = if (chosen) GOLD else withAlpha(WHITE, 40)
+            stroke.strokeWidth = (if (chosen) 0.07f else 0.03f) * u
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+            dialogButtons["avatar_${a.id}"] = r
+        }
+        val by = top + rows * cardH + (rows - 1) * gap + 0.35f * u
+        val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
+        drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+        dialogButtons["close"] = close
+    }
+
     private fun drawDialog(c: Canvas, d: Dialog) {
         dialogButtons.clear()
         fill.color = withAlpha(BLACK, 170)
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         if (d == Dialog.OPTIONS) {
             drawOptions(c)
+            return
+        }
+        if (d == Dialog.AVATAR) {
+            drawAvatarPicker(c)
             return
         }
         val (title, message) = when (d) {
@@ -1649,6 +1812,23 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
     }
 
+    /** Where your avatar's frame is drawn, standing on [playerFoot] centred on [x]. */
+    private fun avatarFrame(out: RectF, x: Float): RectF {
+        val img = art.avatarIdle(avatar)
+        val h = playerH * AVATAR_SCALE
+        val w = h * img.width / img.height
+        out.set(x - w / 2f, playerFoot - h, x + w / 2f, playerFoot)
+        return out
+    }
+
+    /**
+     * Your avatar (Midjourney sprite). While you cast, one of its three cast animations (48 frames)
+     * plays over the whole cast, its speed matched to the cast's length, so the figure is back in its
+     * pose as the shot leaves. Neighbouring frames are blended so the motion stays smooth. Behind it,
+     * a soft light in its crystal's colour (the spell's colour while casting) keeps the dark figure
+     * readable; the crystal glows with the spell. Hits flash it white and shake it; on defeat it
+     * topples backwards and fades.
+     */
     private fun drawPlayerAvatar(c: Canvas) {
         val lost = battle.winner == Side.ENEMY
         val k = if (lost) smooth01(endTimer / 0.8f) else 0f
@@ -1656,7 +1836,73 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val castColor = castColor(p) ?: if (afterglow[0] > 0f) lastCastColor[0] else null
         val cast = if (p.isCasting) p.castProgress else afterglow[0]
         val x = playerX + sin(clock * 55f) * shake[0] * 0.08f * u
-        art.drawMage(c, x, playerFoot, playerH, true, Pal.PLAYER_ROBE, false, castColor, cast, clock, flash[0], DEFEAT_TILT * k, 1f - 0.6f * k)
+        avatarFrame(playerAvatarRect, playerX).inset(playerAvatarRect.width() * 0.2f, 0f)
+        val frame = avatarFrame(RectF(), x)
+        val h = frame.height()
+        c.save()
+        if (k > 0f) c.rotate(-DEFEAT_TILT * k, frame.centerX(), frame.bottom)
+        val light = castColor ?: avatar.glow
+        fill.shader = RadialGradient(
+            frame.centerX(), frame.top + h * 0.45f, h * 0.55f,
+            withAlpha(light, ((50 + 60 * cast) * (1f - k)).toInt()), withAlpha(light, 0), Shader.TileMode.CLAMP,
+        )
+        c.drawCircle(frame.centerX(), frame.top + h * 0.45f, h * 0.55f, fill)
+        fill.shader = null
+        avatarPaint.alpha = (255 * (1f - 0.6f * k)).toInt()
+        avatarPaint.colorFilter = if (flash[0] > 0.01f) PorterDuffColorFilter(withAlpha(WHITE, (170 * flash[0]).toInt()), PorterDuff.Mode.SRC_ATOP) else null
+        // The cast clip lasts the whole cast: its speed adapts to the cast's length, so the avatar is
+        // moving from the tap until it throws its magic as the shot leaves.
+        val anim = if (p.isCasting) art.avatarCast(avatar, castAnim) else null
+        var clipT = 0f
+        if (anim != null) {
+            val t = p.castProgress
+            clipT = t
+            // Between two frames, the next one fades in over the current one: with 48 frames close
+            // together this reads as motion, not a slideshow.
+            val pos = t * (anim.count - 1)
+            val f = pos.toInt()
+            anim.draw(c, f, frame, avatarPaint)
+            val blend = pos - f
+            if (blend > 0.05f && f + 1 < anim.count) {
+                val base = avatarPaint.alpha
+                avatarPaint.alpha = (base * blend).toInt()
+                anim.draw(c, f + 1, frame, avatarPaint)
+                avatarPaint.alpha = base
+            }
+            lastCastAnim = anim
+            lastCastFrame = min(anim.count - 1, f + if (blend >= 0.5f) 1 else 0)
+            castEndedAt = -1f
+        } else {
+            c.drawBitmap(art.avatarIdle(avatar), null, frame, avatarPaint)
+            // The clip ends on the throw, not in the idle pose: after the cast (or a cancel) the last
+            // pose fades into the idle one over AVATAR_SETTLE_TIME.
+            val last = lastCastAnim
+            if (last != null) {
+                if (castEndedAt < 0f) castEndedAt = clock
+                val r = (clock - castEndedAt) / AVATAR_SETTLE_TIME
+                if (r >= 1f || battle.winner != null) {
+                    lastCastAnim = null
+                } else {
+                    val base = avatarPaint.alpha
+                    avatarPaint.alpha = (base * (1f - smooth01(r))).toInt()
+                    last.draw(c, lastCastFrame, frame, avatarPaint)
+                    avatarPaint.alpha = base
+                }
+            }
+        }
+        avatarPaint.colorFilter = null
+        // The crystal glow flashes up as the cast begins and fades as the cast motion gets going
+        // (the staff moves away from where the glow is); it lights up again as the shot leaves.
+        val tipGlow = 1f - smooth01(clipT / 0.12f)
+        if (castColor != null && cast > 0f && tipGlow > 0f) {
+            val tx = frame.left + avatar.tipX * frame.width()
+            val ty = frame.top + avatar.tipY * h
+            val r = (0.25f + 0.35f * cast) * u
+            fill.shader = RadialGradient(tx, ty, r, withAlpha(castColor, (200 * cast * tipGlow * (1f - k)).toInt()), withAlpha(castColor, 0), Shader.TileMode.CLAMP)
+            c.drawCircle(tx, ty, r, fill)
+            fill.shader = null
+        }
+        c.restore()
     }
 
     private fun drawSpellGrid(c: Canvas) {
@@ -1826,6 +2072,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_LANGUAGE = "language"
         const val KEY_SOUND = "sound"
         const val KEY_NAME = "playerName"
+        const val KEY_AVATAR = "avatar"
 
         /** Languages in Options: code and name in that language. */
         val LANGUAGES = listOf("en" to "English", "ru" to "Русский", "es" to "Español")
@@ -1882,6 +2129,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val ZAP_TIME = 0.14f
         const val TAP_DELAY = 1.5f
         const val DEFEAT_TILT = 32f
+
+        /** Your avatar's frame height, as a multiple of [playerH] (the frame has room for the cast's magic). */
+        const val AVATAR_SCALE = 1.2f
+
+        /** After a cast, your avatar settles from its last pose (the throw) back into its idle pose over this long. */
+        const val AVATAR_SETTLE_TIME = 0.4f
 
         /** Height of a flying projectile image, in field cells. */
         const val SHOT_HEIGHT = 1.35f

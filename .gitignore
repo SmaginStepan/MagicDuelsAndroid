@@ -20,3 +20,6 @@
 
 # Google's WebP tools (cwebp/dwebp), downloaded locally, see tools/art/to-webp.ps1
 /tools/art/bin/
+
+# Avatar cast frames pulled from the Midjourney videos (100 MB; see art/avatars/PROMPTS.md to re-extract)
+art/avatars/anim/

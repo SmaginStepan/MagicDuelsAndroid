@@ -368,6 +368,47 @@ class Art(private val res: Resources, private val packageName: String) {
         }
     }
 
+    // Player avatars: an idle pose each, and one cast sheet at a time (a sheet is 24 frames, so only
+    // the cast being played is kept; the next one is decoded in the background when a cast starts).
+    private val avatarIdles = HashMap<String, Bitmap>()
+
+    @Volatile
+    private var avatarCastKey: String? = null
+
+    @Volatile
+    private var avatarCastAnim: Anim? = null
+
+    /** The avatar's idle pose (also the first frame of every cast). */
+    fun avatarIdle(a: Avatar): Bitmap = avatarIdles.getOrPut(a.id) { decode(a.idleRes) }
+
+    /**
+     * Starts decoding cast animation [k] (0 until 3) of [a] in the background, replacing the one kept
+     * before; [avatarCast] returns it once it's ready.
+     */
+    fun prepareAvatarCast(a: Avatar, k: Int) {
+        val key = "${a.id}/${Math.floorMod(k, a.castRes.size)}"
+        if (key == avatarCastKey) return
+        avatarCastKey = key
+        avatarCastAnim = null
+        Thread {
+            val opts = BitmapFactory.Options().apply {
+                inScaled = false
+                if (hardwareBitmaps) inPreferredConfig = Bitmap.Config.HARDWARE
+            }
+            val id = a.castRes[Math.floorMod(k, a.castRes.size)]
+            val sheet = BitmapFactory.decodeResource(res, id, opts) ?: decode(id)
+            val anim = Anim(sheet, Avatars.CAST_COLS, Avatars.CAST_ROWS)
+            if (avatarCastKey == key) avatarCastAnim = anim
+        }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Cast animation [k] of [a] if it's decoded (see [prepareAvatarCast]), else null: frames run from
+     * the idle pose, through the spell, back to it.
+     */
+    fun avatarCast(a: Avatar, k: Int): Anim? =
+        if (avatarCastKey == "${a.id}/${Math.floorMod(k, a.castRes.size)}") avatarCastAnim else null
+
     /** The soft aura behind a globe in the element's colour: one small bitmap per element, drawn scaled. */
     private fun aura(e: Element): Bitmap = auras.getOrPut(e) {
         val size = 128

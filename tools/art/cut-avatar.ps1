@@ -1,0 +1,193 @@
+# Cuts a player avatar out of its Midjourney cast videos (see art/avatars/PROMPTS.md):
+#
+#   cut-avatar.ps1 -Avatar mage      art/avatars/anim/mage/cast1..3/frame_00..NN.png
+#                                    -> res/drawable-nodpi/avatar_mage.webp (idle: cast1's first frame)
+#                                       and avatar_mage_cast1..3.webp (sheets, $Cols frames wide)
+#
+# The white background is removed by flood-filling from the image border through pixels close to the
+# background colour, with a soft edge and the colour un-blended. Unlike tools/art/cut-sprite.ps1 (the
+# straw dummy), pale pixels don't let the fill through, so a pale glowing crystal stays.
+# Every frame of every cast shares one crop, so the idle pose and all animations line up exactly.
+param([string]$Avatar, [int]$Height = 340, [int]$Cols = 4)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public static class AvatarCut {
+    const double Hard = 32, Soft = 84;   // colour distance from the background: <= Hard gone, >= Soft solid
+
+    static byte[] Read(Bitmap b) {
+        BitmapData d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        byte[] px = new byte[b.Width * 4 * b.Height];
+        for (int y = 0; y < b.Height; y++) Marshal.Copy(d.Scan0 + y * d.Stride, px, y * b.Width * 4, b.Width * 4);
+        b.UnlockBits(d);
+        return px;
+    }
+
+    static Bitmap FromBytes(byte[] px, int w, int h) {
+        Bitmap o = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+        BitmapData d = o.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        for (int y = 0; y < h; y++) Marshal.Copy(px, y * w * 4, d.Scan0 + y * d.Stride, w * 4);
+        o.UnlockBits(d);
+        return o;
+    }
+
+    static int[] Background(byte[] px, int W, int H) {
+        var r = new List<int>(); var g = new List<int>(); var b = new List<int>();
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            if (x >= 4 && x < W - 4 && y >= 4 && y < H - 4) continue;
+            int i = (y * W + x) * 4; b.Add(px[i]); g.Add(px[i + 1]); r.Add(px[i + 2]);
+        }
+        r.Sort(); g.Sort(); b.Sort();
+        return new[] { b[b.Count / 2], g[g.Count / 2], r[r.Count / 2] };
+    }
+
+    static byte[] Cut(byte[] px, int W, int H) {
+        int[] bg = Background(px, W, H);
+        double[] dist = new double[W * H];
+        for (int k = 0; k < W * H; k++) {
+            int i = k * 4;
+            double db = px[i] - bg[0], dg = px[i + 1] - bg[1], dr = px[i + 2] - bg[2];
+            dist[k] = Math.Sqrt(db * db + dg * dg + dr * dr);
+        }
+        bool[] reached = new bool[W * H];
+        var q = new Queue<int>();
+        for (int x = 0; x < W; x++) { q.Enqueue(x); q.Enqueue((H - 1) * W + x); }
+        for (int y = 0; y < H; y++) { q.Enqueue(y * W); q.Enqueue(y * W + W - 1); }
+        while (q.Count > 0) {
+            int k = q.Dequeue();
+            if (reached[k] || dist[k] >= Soft) continue;
+            reached[k] = true;
+            int x = k % W, y = k / W;
+            if (x > 0) q.Enqueue(k - 1); if (x < W - 1) q.Enqueue(k + 1);
+            if (y > 0) q.Enqueue(k - W); if (y < H - 1) q.Enqueue(k + W);
+        }
+        // Background enclosed by the figure or its magic (a swirl closing around white, a gap between
+        // hair and collar): any patch of near-white the border fill didn't reach is background too,
+        // down to a dozen pixels. Crystal highlights are coloured, not white, so they stay.
+        bool[] seen = new bool[W * H];
+        var comp = new List<int>();
+        for (int s = 0; s < W * H; s++) {
+            if (reached[s] || seen[s] || dist[s] >= 18) continue;
+            comp.Clear();
+            q.Enqueue(s); seen[s] = true;
+            while (q.Count > 0) {
+                int k = q.Dequeue(); comp.Add(k);
+                int x = k % W, y = k / W;
+                int[] nb = { x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, y > 0 ? k - W : -1, y < H - 1 ? k + W : -1 };
+                foreach (int n in nb) if (n >= 0 && !seen[n] && !reached[n] && dist[n] < Soft) { seen[n] = true; q.Enqueue(n); }
+            }
+            if (comp.Count >= 12) foreach (int k in comp) reached[k] = true;
+        }
+        byte[] o = new byte[W * H * 4];
+        for (int k = 0; k < W * H; k++) {
+            int i = k * 4;
+            double a = reached[k] ? Math.Min(1.0, Math.Max(0.0, (dist[k] - Hard) / (Soft - Hard))) : 1.0;
+            if (a <= 0) continue;
+            for (int c = 0; c < 3; c++) o[i + c] = (byte)Math.Min(255, Math.Max(0, (px[i + c] - (1 - a) * bg[c]) / a));
+            o[i + 3] = (byte)(a * 255);
+        }
+        // Video compression blurs the white background a pixel or two into the figure's outline, which
+        // shows as a light rim on the dark game background: trim two pixels off the outline (twice,
+        // each pixel's alpha becomes the smallest in its 3x3 neighbourhood), then darken the pixels
+        // right at the new outline, so any light left there turns into a dark edge.
+        byte[] e = Erode(Erode(o, W, H), W, H);
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int k = y * W + x;
+            if (e[k * 4 + 3] == 0) continue;
+            bool edge = false;
+            for (int dy = -1; dy <= 1 && !edge; dy++) for (int dx = -1; dx <= 1; dx++) {
+                int xx = x + dx, yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= W || yy >= H || e[(yy * W + xx) * 4 + 3] < 128) { edge = true; break; }
+            }
+            if (edge) for (int c = 0; c < 3; c++) e[k * 4 + c] = (byte)(e[k * 4 + c] * 0.55);
+        }
+        return e;
+    }
+
+    static byte[] Erode(byte[] o, int W, int H) {
+        byte[] e = (byte[])o.Clone();
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int k = y * W + x;
+            if (o[k * 4 + 3] == 0) continue;
+            int m = 255;
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                int xx = x + dx, yy = y + dy;
+                int na = (xx < 0 || yy < 0 || xx >= W || yy >= H) ? 0 : o[(yy * W + xx) * 4 + 3];
+                if (na < m) m = na;
+            }
+            e[k * 4 + 3] = (byte)m;
+        }
+        return e;
+    }
+
+    static void Bounds(byte[] a, int W, int H, ref int x0, ref int y0, ref int x1, ref int y1) {
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+            if (a[(y * W + x) * 4 + 3] > 128) { x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); y0 = Math.Min(y0, y); y1 = Math.Max(y1, y); }
+    }
+
+    static Bitmap Scale(byte[] px, int W, int H, Rectangle crop, int w, int h) {
+        using (Bitmap src = FromBytes(px, W, H)) {
+            Bitmap o = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(o)) {
+                g.CompositingMode = CompositingMode.SourceCopy;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                using (ImageAttributes ia = new ImageAttributes()) {
+                    ia.SetWrapMode(WrapMode.TileFlipXY);
+                    g.DrawImage(src, new Rectangle(0, 0, w, h), crop.X, crop.Y, crop.Width, crop.Height, GraphicsUnit.Pixel, ia);
+                }
+            }
+            return o;
+        }
+    }
+
+    // dirs: one folder of frame_*.png per cast. Writes outIdle and outSheets[i] (one per dir).
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, int height, int cols) {
+        var casts = new List<List<byte[]>>();
+        int W = 0, H = 0;
+        foreach (string dir in dirs) {
+            var frames = new List<byte[]>();
+            foreach (string f in Directory.GetFiles(dir, "frame_*.png").OrderBy(f => f))
+                using (Bitmap b = new Bitmap(f)) { W = b.Width; H = b.Height; frames.Add(Cut(Read(b), W, H)); }
+            casts.Add(frames);
+        }
+        int x0 = int.MaxValue, y0 = int.MaxValue, x1 = -1, y1 = -1;
+        foreach (var frames in casts) foreach (byte[] f in frames) Bounds(f, W, H, ref x0, ref y0, ref x1, ref y1);
+        int m = (int)(H * 0.02);
+        Rectangle crop = Rectangle.FromLTRB(Math.Max(0, x0 - m), Math.Max(0, y0 - m), Math.Min(W, x1 + m + 1), Math.Min(H, y1 + 2));
+        int fw = (int)Math.Round(height * crop.Width / (double)crop.Height);
+        using (Bitmap o = Scale(casts[0][0], W, H, crop, fw, height)) o.Save(outIdle, ImageFormat.Png);
+        for (int s = 0; s < casts.Count; s++) {
+            var frames = casts[s];
+            int n = frames.Count, rows = (n + cols - 1) / cols;
+            using (Bitmap sheet = new Bitmap(cols * fw, rows * height, PixelFormat.Format32bppArgb)) {
+                using (Graphics g = Graphics.FromImage(sheet)) {
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    for (int k = 0; k < n; k++)
+                        using (Bitmap f = Scale(frames[k], W, H, crop, fw, height)) g.DrawImage(f, (k % cols) * fw, (k / cols) * height, fw, height);
+                }
+                sheet.Save(outSheets[s], ImageFormat.Png);
+            }
+        }
+        return String.Format("{0} casts of {1} frames, video {2}x{3}, crop {4}, frame {5}x{6}", casts.Count, casts[0].Count, W, H, crop, fw, height);
+    }
+}
+"@
+
+$root = Join-Path $PSScriptRoot '..\..'
+$anim = (Resolve-Path (Join-Path $root "art\avatars\anim\$Avatar")).Path
+$res = (Resolve-Path (Join-Path $root 'app\src\main\res\drawable-nodpi')).Path
+$dirs = @(Get-ChildItem $anim -Directory | Where-Object { $_.Name -like 'cast*' } | Sort-Object Name | ForEach-Object { $_.FullName })
+$sheets = @($dirs | ForEach-Object { Join-Path $res ("avatar_{0}_{1}.png" -f $Avatar, (Split-Path $_ -Leaf)) })
+$idle = Join-Path $res "avatar_$Avatar.png"
+[AvatarCut]::Run($dirs, $idle, $sheets, $Height, $Cols)
+& (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle) + $sheets)

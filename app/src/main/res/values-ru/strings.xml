@@ -53,6 +53,13 @@
     <string name="tut_backfire">Этот ряд был заполнен, поэтому заклинание отразилось и попало в вас. Цельтесь в ряды со свободным местом.</string>
     <string name="tut_walls_tap">Новое: стены! Нажмите кнопку стены над полем. После долгого заклинания магическое стекло заполнит все пустые клетки этого столбца.</string>
     <string name="tut_walls_break">Снаряд, долетевший до стены, разбивает её и останавливается. Шары, которые он толкает, упираются в стену. Взрыв рядом разбивает соседние стены.</string>
+    <string name="avatar">Аватар</string>
+    <string name="choose_avatar">Выберите аватар</string>
+    <string name="avatar_mage">Архимаг</string>
+    <string name="avatar_sorceress">Чародейка</string>
+    <string name="avatar_conjurer">Заклинатель</string>
+    <string name="avatar_free">Бесплатно</string>
+    <string name="avatar_more">Скоро новые аватары</string>
 
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">

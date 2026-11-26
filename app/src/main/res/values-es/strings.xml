@@ -53,6 +53,13 @@
     <string name="tut_backfire">Esa fila estaba llena, así que tu hechizo rebotó y te golpeó. Apunta a filas con espacio.</string>
     <string name="tut_walls_tap">¡Novedad: muros! Toca un botón de muro sobre el campo. Tras un hechizo largo, el cristal mágico llena todas las casillas vacías de esa columna.</string>
     <string name="tut_walls_break">Un disparo que alcanza un muro lo rompe y se queda allí. Los globos empujados contra un muro también se detienen. Una explosión rompe los muros de al lado.</string>
+    <string name="avatar">Avatar</string>
+    <string name="choose_avatar">Elige tu avatar</string>
+    <string name="avatar_mage">Archimago</string>
+    <string name="avatar_sorceress">Hechicera</string>
+    <string name="avatar_conjurer">Conjurador</string>
+    <string name="avatar_free">Gratis</string>
+    <string name="avatar_more">Pronto más avatares</string>
 
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">
