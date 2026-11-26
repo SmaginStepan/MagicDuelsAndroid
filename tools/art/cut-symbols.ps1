@@ -144,15 +144,17 @@ public static class SymbolCutter {
 $root = Join-Path $PSScriptRoot '..\..'
 $res = Join-Path $root 'app\src\main\res\drawable-nodpi'
 if ($Kind -eq 'walls') {
-    # Wall button (like the spell buttons) and the wall block on the field: square tiles.
+    # The wall button (a square tile like the spell buttons) and the wall on the field: a glowing
+    # glass pane on black, keyed by brightness so its dark glass is see-through, cropped tight.
     $art = Join-Path $root 'art\walls'
+    $dir = (Resolve-Path $art).Path
     New-Item -ItemType Directory -Force (Join-Path $art 'sprites') | Out-Null
     $pngs = @()
-    foreach ($t in @(@('button', 'wall_button', 256, 60, 0.95, 0.17), @('block', 'wall_block', 192, 20, 1.0, 0.12))) {
-        $sprite = (Resolve-Path $art).Path + "\sprites\$($t[0]).png"
-        "{0,-10} {1}" -f $t[0], [SymbolCutter]::Tile((Resolve-Path "$art\originals\$($t[0]).png").Path, $sprite, $t[2], $t[3], $t[4], $t[5])
+    "{0,-10} {1}" -f 'button', [SymbolCutter]::Tile("$dir\originals\button.png", "$dir\sprites\button.png", 256, 60, 0.95, 0.17)
+    "{0,-10} {1}" -f 'block', [SymbolCutter]::Cut("$dir\originals\block.png", "$dir\sprites\block.png", 192, $Lo, $Hi, 1.02, $false)
+    foreach ($t in @(@('button', 'wall_button'), @('block', 'wall_block'))) {
         $out = (Resolve-Path $res).Path + "\$($t[1]).png"
-        Copy-Item $sprite $out -Force
+        Copy-Item "$dir\sprites\$($t[0]).png" $out -Force
         $pngs += $out
     }
     & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files $pngs

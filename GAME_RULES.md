@@ -54,11 +54,13 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Impacts are resolved one at a time; a shot that arrives while the field is moving waits at the edge.
 
 ## Walls
-- Five **wall buttons** sit above the field, one over each column. Tapping one casts walls: a short cast
-  (75% of the caster's base cast time, `Rules.WALL_CAST_SHARE`: 2.0 s for you, shorter than any spell)
+- Five **wall buttons** sit above the field, one over each column. Tapping one casts walls: a long cast
+  (1.25× the caster's slowest spell, `Rules.WALL_CAST_FACTOR`: about 11.8 s for you, longer than any spell)
   that takes your one casting slot like a spell and can be cancelled the same way. The spell grid isn't
   touched. While it's cast, the button sits in a glyph ring and the column glows.
-- When the cast completes (as soon as the field is still), a stone wall rises in **every empty cell of
+- A wall button is **hidden while the cell right below it** (the column's top cell) holds a wall or a
+  globe, and comes back when that cell is free again.
+- When the cast completes (as soon as the field is still), a wall of magic glass rises in **every empty cell of
   that column**. Walls never fall; globes rest on them.
 - A shot that reaches a wall itself **breaks it and takes its cell**, going no further:
   `· · ▓ G G` + X → `· · X G G`. If there are globes in front of the wall, the wall holds like the field
@@ -69,7 +71,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   below). Whatever stood on a broken wall then falls.
 - Walls don't count for lines of 3: a wall between two globes breaks the line.
 - Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random column
-  (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3).
+  (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3). The same
+  rule holds for bots: if that column's top cell is taken when its turn comes, it picks a free column
+  instead (or casts a shot if every column is blocked).
 
 ## Menu and tutorial
 - The game opens on a start menu: **Continue** (shows your level and next opponent), **Restart game**

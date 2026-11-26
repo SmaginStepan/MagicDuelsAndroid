@@ -39,7 +39,7 @@ data class WallSpell(val column: Int) : Move
 /**
  * A duellist: hit points plus the move currently being cast. Casting a spell into a lane takes
  * [Rules.castTime] of the caster's [baseCastTime] (longer for the top lanes); a wall takes
- * [Rules.wallCastTime], shorter than any spell.
+ * [Rules.wallCastTime], longer than any spell.
  */
 class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float) {
     var hp = maxHp
@@ -280,12 +280,18 @@ class Battle(
     }
 
     /**
-     * The player taps the wall button above field column [column]: after a short cast, walls rise in
-     * every empty cell of that column. Returns false if it can't be cast right now.
+     * True if walls can be cast into field column [column]: its top cell (right below the wall
+     * button) is empty. Otherwise the column's wall button is hidden.
+     */
+    fun canRaiseWall(column: Int): Boolean = board.isEmpty(0, column)
+
+    /**
+     * The player taps the wall button above field column [column]: after a long cast, walls rise in
+     * every empty cell of that column. Returns false if it can't be cast right now (see [canRaiseWall]).
      */
     fun tryCastWall(column: Int): Boolean {
         if (!started || winner != null || player.isCasting) return false
-        if (column !in 0 until board.cols) return false
+        if (column !in 0 until board.cols || !canRaiseWall(column)) return false
         player.startCast(WallSpell(column))
         events += BattleEvent.WallCastStarted(Side.PLAYER, column)
         return true
@@ -330,6 +336,15 @@ class Battle(
         } else {
             botWait -= dt
             if (botWait <= 0f) {
+                // Like the player, the bot can only raise walls in a column whose top cell is free:
+                // a planned wall into a blocked column moves to a free one (or becomes a shot).
+                (plannedMoves.first() as? WallSpell)?.let { wall ->
+                    if (!canRaiseWall(wall.column)) {
+                        val free = (0 until board.cols).filter(::canRaiseWall)
+                        plannedMoves[0] = if (free.isEmpty()) Spell(elements.random(random), random.nextInt(Rules.ROWS))
+                        else WallSpell(free.random(random))
+                    }
+                }
                 when (val move = plannedMoves.first()) {
                     is Spell -> {
                         enemy.startCast(move)

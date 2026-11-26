@@ -340,17 +340,41 @@ class BattleTest {
     }
 
     @Test
-    fun aWallCastIsShorterThanAnySpellAndRaisesWallsInItsColumn() {
+    fun aWallCastTakesLongerThanAnySpellAndRaisesWallsInItsColumn() {
         val board = Board.parse(".....", ".....", ".....", "..F..", "..W..")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
         assertTrue(b.tryCastWall(2))
         assertFalse(b.tryCast(4, 0)) // one cast at a time
         val wallTime = b.player.castTime
-        assertTrue((0 until Rules.ROWS).all { wallTime < Rules.castTime(Rules.PLAYER_CAST_TIME, it) })
+        assertTrue((0 until Rules.ROWS).all { wallTime > Rules.castTime(Rules.PLAYER_CAST_TIME, it) + 2f })
         val events = runCollecting(b, wallTime + 0.1f)
         assertEquals(listOf("..#..", "..#..", "..#..", "..F..", "..W.."), board.describe())
         assertTrue(events.contains(BattleEvent.WallsRaised(Side.PLAYER, 2, listOf(Cell(0, 2), Cell(1, 2), Cell(2, 2)))))
         assertFalse(b.player.isCasting)
+    }
+
+    @Test
+    fun wallsCanOnlyBeCastIntoAColumnWhoseTopCellIsFree() {
+        val board = Board.parse("F....", "W#...", "E#...", "A#...", "F#...")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        assertFalse(b.canRaiseWall(0)) // a globe sits right below the button
+        assertFalse(b.tryCastWall(0))
+        assertTrue(b.canRaiseWall(1)) // walls below, but the top cell is free
+        assertTrue(b.tryCastWall(1))
+        run(b, b.player.castTime + 0.1f)
+        assertEquals("F#...", board.describe()[0])
+        assertFalse(b.canRaiseWall(1)) // now full: its button hides
+    }
+
+    @Test
+    fun theBotMovesAPlannedWallOutOfABlockedColumn() {
+        val mage = Opponent("Wall mage", AvatarKind.MAGE, hp = 100, castTime = 0.4f, idleTime = 0.4f, wallChance = 1f)
+        // Every column but the middle one is blocked at the top.
+        val board = Board.parse("FW.EA", "WE.AF", "EA.FW", "AF.WE", "FW.EA")
+        val b = Battle(mage, seed = 3, startBoard = board, introTime = 0f)
+        val events = runCollecting(b, 1f)
+        assertTrue(events.contains(BattleEvent.WallCastStarted(Side.ENEMY, 2)))
+        assertTrue(events.none { it is BattleEvent.WallCastStarted && it.column != 2 })
     }
 
     @Test
@@ -409,7 +433,7 @@ class BattleTest {
         val b = Battle(mage, seed = 3, startBoard = board, introTime = 0f)
         assertTrue(b.botQueue.all { it is WallSpell })
         val column = (b.botQueue[0] as WallSpell).column
-        val events = runCollecting(b, 1f)
+        val events = runCollecting(b, 0.3f + Rules.wallCastTime(mage.castTime) + 0.3f)
         assertTrue(events.contains(BattleEvent.WallCastStarted(Side.ENEMY, column)))
         assertTrue(events.any { it is BattleEvent.WallsRaised && it.side == Side.ENEMY && it.column == column && it.cells.size == 5 })
         assertTrue(board.describe().all { it[column] == '#' })
