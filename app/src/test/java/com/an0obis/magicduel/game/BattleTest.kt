@@ -378,6 +378,42 @@ class BattleTest {
     }
 
     @Test
+    fun theBotDropsAWallCastWhoseColumnFillsUpAndMovesOn() {
+        val mage = Opponent("Wall mage", AvatarKind.MAGE, hp = 100, castTime = 0.4f, idleTime = 30f, wallChance = 1f)
+        val board = Board.parse(".....", ".....", ".....", ".....", ".....")
+        val b = Battle(mage, seed = 3, startBoard = board, introTime = 0f)
+        // The bot starts its first wall after idleTime / 2.
+        val started = runCollecting(b, 15.1f).filterIsInstance<BattleEvent.WallCastStarted>().single()
+        val column = started.column
+        val next = b.botQueue[1]
+        // Meanwhile walls fill that column (as if you got there first).
+        board.raiseWalls(column)
+        val events = runCollecting(b, 0.1f)
+        assertTrue(events.contains(BattleEvent.WallCastCancelled(Side.ENEMY, column)))
+        // Straight on to the next move, without waiting: a wall, into a free column.
+        val again = events.filterIsInstance<BattleEvent.WallCastStarted>().single()
+        assertTrue(again.column != column)
+        assertTrue(b.enemy.isCasting)
+        assertEquals(Rules.BOT_SEQUENCE_LENGTH, b.botQueue.size)
+        assertEquals(if (next is WallSpell && next.column != column) next else b.botQueue[0], b.botQueue[0])
+        assertTrue(board.describe().all { row -> row.count { it == '#' } == 1 })
+    }
+
+    @Test
+    fun youCannotCastWallsIntoTheColumnTheBotIsWalling() {
+        val mage = Opponent("Wall mage", AvatarKind.MAGE, hp = 100, castTime = 0.4f, idleTime = 30f, wallChance = 1f)
+        val board = Board.parse(".....", ".....", ".....", ".....", ".....")
+        val b = Battle(mage, seed = 3, startBoard = board, introTime = 0f)
+        val column = runCollecting(b, 15.1f).filterIsInstance<BattleEvent.WallCastStarted>().single().column
+        assertTrue(b.canRaiseWall(column))
+        assertFalse(b.canPlayerCastWall(column))
+        assertFalse(b.tryCastWall(column))
+        // Any other free column is fine.
+        val other = (column + 1) % Rules.COLS
+        assertTrue(b.tryCastWall(other))
+    }
+
+    @Test
     fun cancellingAWallCastRaisesNothing() {
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
@@ -413,6 +449,24 @@ class BattleTest {
     }
 
     @Test
+    fun aBotShotPushesThroughTheFirstWallOfAFullRow() {
+        // Every row is full, with a wall in the middle: whichever lane the bot picks, the stretch in
+        // front of the wall (from the right) is full.
+        val board = Board.parse("EA#WF", "WF#EA", "EA#WF", "WF#EA", "EA#WF")
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 40f, wallChance = 0f)
+        val b = Battle(mage, seed = 4, startBoard = board, introTime = 0f)
+        val lane = (b.botQueue[0] as Spell).shot.lane
+        val before = board.describe()[lane]
+        val events = runCollecting(b, 20f + Rules.castTime(mage.castTime, lane) + Rules.FLIGHT_TIME + 0.5f)
+        // No backfire: the push broke the wall and the front globe moved into its cell.
+        assertTrue(events.none { it is BattleEvent.Backfired || it is BattleEvent.BackfireHit })
+        assertTrue(events.contains(BattleEvent.WallsBroken(listOf(Cell(lane, 2)), byShot = true)))
+        assertFalse(board.isWall(lane, 2))
+        assertEquals(100, b.enemy.hp)
+        assertEquals(before.substring(0, 2) + before.substring(3, 5), board.describe()[lane].substring(0, 4))
+    }
+
+    @Test
     fun anExplosionBreaksTheWallBesideIt() {
         // F into ".FF#." packs against the wall: FFF explodes and breaks the wall next to it.
         val board = Board.parse(".....", ".....", ".....", "...E.", ".FF#.")
@@ -424,6 +478,19 @@ class BattleTest {
         assertTrue(events.contains(BattleEvent.WallsBroken(listOf(Cell(4, 3)), byShot = false)))
         // The earth globe that stood on the wall fell into its place.
         assertEquals(listOf(".....", ".....", ".....", ".....", "...E."), board.describe())
+    }
+
+    @Test
+    fun aWallFallsIntoTheGapAPushLeavesBelowIt() {
+        // F into "F.F.." pushes both globes to the far end: the wall above the first one drops into
+        // the bottom-left cell, the three fires explode and the wall (not next to them) survives.
+        val board = Board.parse(".....", ".....", ".....", "#....", "F.F..")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[4, 0] = Element.FIRE
+        assertTrue(b.tryCast(4, 0))
+        run(b, shotTime(4))
+        assertEquals(dummy.hp - Rules.matchDamage(3, 1), b.enemy.hp)
+        assertEquals(listOf(".....", ".....", ".....", ".....", "#...."), board.describe())
     }
 
     @Test

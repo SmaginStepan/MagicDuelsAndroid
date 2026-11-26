@@ -340,15 +340,33 @@ class Art(private val res: Resources, private val packageName: String) {
 
     // Walls (art/walls/PROMPTS.md): the button above each field column, and the block on the field.
     private val wallButtonSource: Bitmap by lazy { decode(R.drawable.wall_button) }
-    private val wallBlockSource: Bitmap by lazy { decode(R.drawable.wall_block) }
     private val wallButtons = HashMap<Int, Bitmap>()
-    private val wallBlocks = HashMap<Int, Bitmap>()
+    private val wallBlocks = HashMap<Long, Bitmap>()
+
+    // Wall variants wall_block_1, wall_block_2 … (variations of one crystal brick wall), found by name.
+    @Suppress("DiscouragedApi")
+    private val wallBlockIds: IntArray by lazy {
+        generateSequence(1) { it + 1 }
+            .map { res.getIdentifier("wall_block_$it", "drawable", packageName) }
+            .takeWhile { it != 0 }
+            .toList().toIntArray()
+    }
+    private val wallBlockSources = HashMap<Int, Bitmap>()
 
     /** The square stone wall button, [size] pixels, with rounded transparent corners. */
     fun wallButton(size: Int): Bitmap = wallButtons.getOrPut(size) { Bitmap.createScaledBitmap(wallButtonSource, size, size, true) }
 
-    /** A conjured stone wall block for one field cell, [size] pixels, with rounded corners. */
-    fun wallBlock(size: Int): Bitmap = wallBlocks.getOrPut(size) { Bitmap.createScaledBitmap(wallBlockSource, size, size, true) }
+    /**
+     * A conjured wall of arcane crystal bricks for one field cell, [size] pixels, with slightly rounded
+     * corners. [look] (the wall's, see Board.wallLook) picks one of the variants.
+     */
+    fun wallBlock(size: Int, look: Int): Bitmap {
+        val variant = Math.floorMod(look, wallBlockIds.size)
+        return wallBlocks.getOrPut(variant.toLong() shl 32 or size.toLong()) {
+            val source = wallBlockSources.getOrPut(variant) { decode(wallBlockIds[variant]) }
+            Bitmap.createScaledBitmap(source, size, size, true)
+        }
+    }
 
     /** The soft aura behind a globe in the element's colour: one small bitmap per element, drawn scaled. */
     private fun aura(e: Element): Bitmap = auras.getOrPut(e) {

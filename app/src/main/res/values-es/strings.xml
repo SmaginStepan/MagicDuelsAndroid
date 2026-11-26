@@ -51,6 +51,8 @@
     <string name="tut_make_line">Alinea 3 o más esferas del mismo elemento en una fila o columna. Explotan y golpean a tu rival.</string>
     <string name="tut_damage">Cada esfera que explota hace 5 de daño. Las esferas que caen pueden provocar explosiones en cadena: ×2, ×3…</string>
     <string name="tut_backfire">Esa fila estaba llena, así que tu hechizo rebotó y te golpeó. Apunta a filas con espacio.</string>
+    <string name="tut_walls_tap">¡Novedad: muros! Toca un botón de muro sobre el campo. Tras un hechizo largo, el cristal mágico llena todas las casillas vacías de esa columna.</string>
+    <string name="tut_walls_break">Un disparo que alcanza un muro lo rompe y se queda allí. Los globos empujados contra un muro también se detienen. Una explosión rompe los muros de al lado.</string>
 
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">

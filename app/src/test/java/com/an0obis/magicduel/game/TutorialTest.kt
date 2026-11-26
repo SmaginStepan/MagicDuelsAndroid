@@ -69,4 +69,39 @@ class TutorialTest {
         t.onEvent(BattleEvent.GameOver(Side.PLAYER))
         assertNull(t.hint)
     }
+
+    @Test
+    fun wallsAreLockedOnTheFirstDuelAndUnlockOnTheSecond() {
+        assertFalse(Opponents.forLevel(0).walls)
+        assertTrue(Opponents.forLevel(1).walls)
+        assertTrue(Opponents.forLevel(2).walls)
+        val first = Battle(Opponents.forLevel(0), seed = 1, introTime = 0f)
+        assertFalse(first.canRaiseWall(0))
+        assertFalse(first.tryCastWall(0))
+        val second = Battle(Opponents.forLevel(1), seed = 1, startBoard = Board.parse(".....", ".....", ".....", ".....", "....."), introTime = 0f)
+        assertTrue(second.tryCastWall(0))
+    }
+
+    @Test
+    fun theWallsLessonFollowsTheFirstWallCast() {
+        val t = WallTutorial()
+        assertEquals(WallTutorial.TAP_WALL, t.hint)
+        assertTrue(t.pointsAtWalls)
+        // Spells and the bot's walls don't count.
+        t.onEvent(BattleEvent.CastStarted(Side.PLAYER, Element.FIRE, 2))
+        t.onEvent(BattleEvent.WallCastStarted(Side.ENEMY, 1))
+        assertEquals(WallTutorial.TAP_WALL, t.hint)
+        t.onEvent(BattleEvent.WallCastStarted(Side.PLAYER, 3))
+        assertFalse(t.pointsAtWalls)
+        // Cancelling goes back to the first hint.
+        t.onEvent(BattleEvent.WallCastCancelled(Side.PLAYER, 3))
+        assertTrue(t.pointsAtWalls)
+        t.onEvent(BattleEvent.WallCastStarted(Side.PLAYER, 3))
+        t.onEvent(BattleEvent.WallsRaised(Side.PLAYER, 3, listOf(Cell(0, 3))))
+        assertEquals(WallTutorial.HOW_THEY_BREAK, t.hint)
+        assertFalse(t.done)
+        t.update(WallTutorial.HOW_THEY_BREAK_TIME + 0.1f)
+        assertTrue(t.done)
+        assertNull(t.hint)
+    }
 }

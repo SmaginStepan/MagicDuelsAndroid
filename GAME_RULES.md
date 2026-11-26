@@ -58,22 +58,28 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   (1.25× the caster's slowest spell, `Rules.WALL_CAST_FACTOR`: about 11.8 s for you, longer than any spell)
   that takes your one casting slot like a spell and can be cancelled the same way. The spell grid isn't
   touched. While it's cast, the button sits in a glyph ring and the column glows.
-- A wall button is **hidden while the cell right below it** (the column's top cell) holds a wall or a
-  globe, and comes back when that cell is free again.
-- When the cast completes (as soon as the field is still), a wall of magic glass rises in **every empty cell of
-  that column**. Walls never fall; globes rest on them.
+- A wall button is **disabled (grey and faded) while the cell right below it** (the column's top cell) holds a wall or a
+  globe, or while the bot is casting walls into that same column (its glyph ring shows around the
+  button), and lights up again when it can be used. Walls are locked on level 1 (the tutorial dummy):
+  they unlock on level 2, which starts with a short walls lesson.
+- When the cast completes (as soon as the field is still), a wall of arcane crystal bricks rises in **every empty cell of
+  that column**. Walls fall like globes when the cells below them empty, and globes rest on them.
 - A shot that reaches a wall itself **breaks it and takes its cell**, going no further:
   `· · ▓ G G` + X → `· · X G G`. If there are globes in front of the wall, the wall holds like the field
   edge and the globes are packed against it: `· G ▓ · ·` + X → `X G ▓ · ·`.
-- If the stretch in front of the wall is already full, the shot can't go anywhere and **bounces back at
-  its caster** (10 damage), for bots too: a wall stops a bot from pushing a full row out at you.
-- An explosion **breaks the walls right beside it in the same row** (left and right, not above or
-  below). Whatever stood on a broken wall then falls.
+- If the stretch in front of the wall is already full, **your** shot can't go anywhere and **bounces back** at
+  you (10 damage). A **bot's** shot pushes anyway and **breaks the first wall**: the globes in front of
+  it move one cell, the front one into the wall's cell, and the shot takes the entry cell. Example from
+  the right: `E A ▓ W F` + X → `E A W F X`. (A full row without a wall still pushes a globe out at you.)
+- An explosion **breaks the walls right next to it**: left, right, above and below (not diagonally).
+  Whatever stood on a broken wall then falls.
 - Walls don't count for lines of 3: a wall between two globes breaks the line.
 - Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random column
   (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3). The same
   rule holds for bots: if that column's top cell is taken when its turn comes, it picks a free column
-  instead (or casts a shot if every column is blocked).
+  instead (or casts a shot if every column is blocked). If the column fills up while the bot is still
+  casting its wall (with your walls, say), it drops that cast at once and goes straight on to its next
+  move.
 
 ## Menu and tutorial
 - The game opens on a start menu: **Continue** (shows your level and next opponent), **Restart game**
@@ -83,6 +89,8 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Level 1 (target dummy) is the tutorial: short hints that follow what you do — tap a spell, watch it fly
   and push, line up 3+, how damage and chains work, and a note if a shot backfires. Beating the dummy
   ends the tutorial for good (until Restart game).
+- Level 2 (oak dummy) unlocks walls and teaches them: a hint points at the wall buttons until you cast
+  walls, then one explains how walls break (shown for 9 s). It is shown once (until Restart game).
 
 ## Opponents (endless ladder, `Opponents.kt`)
 - Level 1 Target dummy (40 HP) and level 2 Oak dummy (80 HP) never fire back.

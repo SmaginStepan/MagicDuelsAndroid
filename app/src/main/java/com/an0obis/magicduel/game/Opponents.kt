@@ -27,6 +27,8 @@ data class Opponent(
     val nameIndex: Int = -1,
     /** The chance that a move this bot plans is a wall instead of a shot. */
     val wallChance: Float = Rules.BOT_WALL_CHANCE,
+    /** False on the first duel (the tutorial): walls unlock from level 2, which teaches them. */
+    val walls: Boolean = true,
 ) {
     val fires: Boolean get() = kind == AvatarKind.MAGE
 }
@@ -38,7 +40,7 @@ data class Opponent(
  */
 object Opponents {
     private val dummies = listOf(
-        Opponent("Target dummy", AvatarKind.DUMMY, hp = 40, dummyIndex = 0),
+        Opponent("Target dummy", AvatarKind.DUMMY, hp = 40, dummyIndex = 0, walls = false),
         Opponent("Oak dummy", AvatarKind.DUMMY, hp = 80, dummyIndex = 1),
     )
 

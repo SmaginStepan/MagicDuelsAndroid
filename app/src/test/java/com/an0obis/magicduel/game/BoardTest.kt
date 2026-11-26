@@ -158,6 +158,17 @@ class BoardTest {
     }
 
     @Test
+    fun aPushThroughAWallMovesTheGlobesInFrontIntoItsCell() {
+        val b = lastRow(".....", ".....", ".....", ".....", "EA#WF")
+        assertFalse(b.canInsert(4, fromLeft = false))
+        assertEquals(4, b.pushThroughWall(4, fromLeft = false, globe = Globe(Element.AIR)))
+        assertEquals("EAWFA", b.describe()[4])
+        val left = lastRow(".....", ".....", ".....", ".....", "EA#WF")
+        assertEquals(0, left.pushThroughWall(4, fromLeft = true, globe = Globe(Element.WATER)))
+        assertEquals("WEAWF", left.describe()[4])
+    }
+
+    @Test
     fun aWallRightAtTheEntryEdgeIsBrokenAtOnce() {
         val b = lastRow(".....", ".....", ".....", ".....", "#WE..")
         assertEquals(0, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
@@ -165,11 +176,18 @@ class BoardTest {
     }
 
     @Test
-    fun wallsStayPutAndGlobesRestOnThem() {
-        val b = Board.parse("W....", ".....", "#....", ".....", "E....")
+    fun wallsFallLikeGlobesAndGlobesRestOnThem() {
+        val b = Board.parse("W....", ".....", "#....", ".....", "E.#..")
+        val look = b.wallLook(2, 0)
         assertTrue(b.applyGravity())
-        assertEquals(listOf(".....", "W....", "#....", ".....", "E...."), b.describe())
+        assertEquals(look, b.wallLook(3, 0)) // a falling wall keeps its art variant
+        assertEquals(listOf(".....", ".....", "W....", "#....", "E.#.."), b.describe())
+        // The wall that fell remembers where from, for the animation.
+        assertEquals(2f, b.wallFromRow(3, 0))
+        assertEquals(4f, b.wallFromRow(4, 2))
         assertFalse(b.applyGravity())
+        b.settleWalls()
+        assertEquals(3f, b.wallFromRow(3, 0))
     }
 
     @Test
@@ -181,12 +199,17 @@ class BoardTest {
     }
 
     @Test
-    fun anExplosionBreaksTheWallsBesideItInItsRowOnly() {
-        val b = Board.parse(".....", ".....", ".....", ".#...", "#FFF#")
+    fun anExplosionBreaksTheWallsNextToItButNotDiagonally() {
+        val b = Board.parse(".....", ".....", "#....", ".#..#", "#FFF#")
         val exploding = listOf(Cell(4, 1), Cell(4, 2), Cell(4, 3))
-        assertEquals(setOf(Cell(4, 0), Cell(4, 4)), b.breakWallsBeside(exploding).toSet())
-        assertTrue(b.isWall(3, 1))
+        // Left, right and above; the wall at (3, 4) is only diagonal to the explosion, (2, 0) is far.
+        assertEquals(setOf(Cell(4, 0), Cell(4, 4), Cell(3, 1)), b.breakWallsAround(exploding).toSet())
+        assertTrue(b.isWall(3, 4))
+        assertTrue(b.isWall(2, 0))
         assertEquals(".FFF.", b.describe()[4])
+        // And below.
+        val below = Board.parse(".....", ".....", ".....", "..F..", "..#..")
+        assertEquals(listOf(Cell(4, 2)), below.breakWallsAround(listOf(Cell(3, 2))))
     }
 
     @Test

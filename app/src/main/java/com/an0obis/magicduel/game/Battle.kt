@@ -14,8 +14,9 @@ enum class Side {
     val fromLeft: Boolean get() = this == PLAYER
 
     /**
-     * Bot shots never backfire: into a full row they push anyway, and the globe pushed off the
-     * far edge hits the player. Player shots into a full row backfire.
+     * Bot shots never backfire: into a full row they push anyway, and the globe pushed off the far
+     * edge hits the player; if a wall blocks them, the push breaks the first wall instead. Player
+     * shots into a full row (or a full stretch in front of a wall) backfire.
      */
     val pushesFullRows: Boolean get() = this == ENEMY
 }
@@ -132,13 +133,19 @@ sealed interface BattleEvent {
     /** [side] started conjuring walls into field column [column]. */
     data class WallCastStarted(val side: Side, val column: Int) : BattleEvent
 
-    /** The player cancelled a wall cast. */
+    /**
+     * A wall cast was cancelled: by the player, or by the bot because its column's top cell was
+     * taken meanwhile (it goes straight on to its next move).
+     */
     data class WallCastCancelled(val side: Side, val column: Int) : BattleEvent
+
+    /** [side]'s wall cast completed; the walls rise as soon as the field is still ([WallsRaised]). */
+    data class WallCastDone(val side: Side, val column: Int) : BattleEvent
 
     /** Walls rose in [cells] (empty if the column had no room). */
     data class WallsRaised(val side: Side, val column: Int, val cells: List<Cell>) : BattleEvent
 
-    /** Walls in [cells] broke: hit by a shot ([byShot]) or beside an explosion. */
+    /** Walls in [cells] broke: hit by a shot ([byShot]) or next to an explosion. */
     data class WallsBroken(val cells: List<Cell>, val byShot: Boolean) : BattleEvent
     data class Launched(val side: Side, val element: Element, val lane: Int) : BattleEvent
     data class Landed(val side: Side, val element: Element, val row: Int, val col: Int) : BattleEvent
@@ -280,18 +287,24 @@ class Battle(
     }
 
     /**
-     * True if walls can be cast into field column [column]: its top cell (right below the wall
-     * button) is empty. Otherwise the column's wall button is hidden.
+     * True if walls can be cast into field column [column] at all: walls are unlocked (not on the
+     * first duel) and the column's top cell (right below its wall button) is empty.
      */
-    fun canRaiseWall(column: Int): Boolean = board.isEmpty(0, column)
+    fun canRaiseWall(column: Int): Boolean = opponent.walls && board.isEmpty(0, column)
+
+    /**
+     * True if the player may start walls in [column]: they can be raised there ([canRaiseWall]) and
+     * the bot isn't already casting walls into that same column. Otherwise the button is disabled.
+     */
+    fun canPlayerCastWall(column: Int): Boolean = canRaiseWall(column) && enemy.castWallColumn != column
 
     /**
      * The player taps the wall button above field column [column]: after a long cast, walls rise in
-     * every empty cell of that column. Returns false if it can't be cast right now (see [canRaiseWall]).
+     * every empty cell of that column. Returns false if it can't be cast right now (see [canPlayerCastWall]).
      */
     fun tryCastWall(column: Int): Boolean {
         if (!started || winner != null || player.isCasting) return false
-        if (column !in 0 until board.cols || !canRaiseWall(column)) return false
+        if (column !in 0 until board.cols || !canPlayerCastWall(column)) return false
         player.startCast(WallSpell(column))
         events += BattleEvent.WallCastStarted(Side.PLAYER, column)
         return true
@@ -305,7 +318,10 @@ class Battle(
                     launch(Side.PLAYER, move.shot)
                     events += BattleEvent.SpellsRefilled(spells.refill())
                 }
-                is WallSpell -> pendingWalls.addLast(Side.PLAYER to move.column)
+                is WallSpell -> {
+                    pendingWalls.addLast(Side.PLAYER to move.column)
+                    events += BattleEvent.WallCastDone(Side.PLAYER, move.column)
+                }
                 null -> Unit
             }
             updateBot(dt)
@@ -325,10 +341,25 @@ class Battle(
     private fun updateBot(dt: Float) {
         if (plannedMoves.isEmpty()) return
         if (enemy.isCasting) {
+            // A wall cast into a column whose top cell has meanwhile been taken (by your walls, say)
+            // is pointless: the bot drops it at once and goes straight on to its next move.
+            (enemy.castMove as? WallSpell)?.let { wall ->
+                if (!canRaiseWall(wall.column)) {
+                    enemy.cancelCast()
+                    events += BattleEvent.WallCastCancelled(Side.ENEMY, wall.column)
+                    plannedMoves.removeFirst()
+                    plannedMoves.addLast(randomMove())
+                    botWait = 0f
+                    return
+                }
+            }
             val move = enemy.advance(dt) ?: return
             when (move) {
                 is Spell -> launch(Side.ENEMY, move.shot)
-                is WallSpell -> pendingWalls.addLast(Side.ENEMY to move.column)
+                is WallSpell -> {
+                    pendingWalls.addLast(Side.ENEMY to move.column)
+                    events += BattleEvent.WallCastDone(Side.ENEMY, move.column)
+                }
             }
             plannedMoves.removeFirst()
             plannedMoves.addLast(randomMove())
@@ -409,16 +440,14 @@ class Battle(
     private fun resolveImpact(p: Projectile) {
         val fromLeft = p.owner.fromLeft
         val full = !board.canInsert(p.lane, fromLeft)
-        // A wall with globes packed against it holds: the shot can't go anywhere, whoever cast it.
-        val walled = full && board.firstWall(p.lane, fromLeft) >= 0
-        if (full && (walled || !p.owner.pushesFullRows)) {
-            // No free space in the row: the spell strikes its own caster.
+        val wall = board.firstWall(p.lane, fromLeft)
+        if (full && !p.owner.pushesFullRows) {
+            // No free space in the row (or in front of its first wall): your spell strikes you.
             p.state = Projectile.State.BOUNCING
             events += BattleEvent.Backfired(p.owner, p.lane)
             return
         }
         p.state = Projectile.State.DONE
-        val wall = board.firstWall(p.lane, fromLeft)
         snapshotPositions()
         // The shot enters one cell outside the field edge and slides until it is blocked.
         val shot = Globe(p.element, p.look).apply {
@@ -429,17 +458,26 @@ class Battle(
             inFlight = true
             headingRight = fromLeft
         }
-        val col = if (full) {
-            // Full row, but this caster pushes anyway: the far globe flies out at the opponent.
-            val out = board.pushThroughFullRow(p.lane, fromLeft, shot)
-            flying += Projectile(p.owner, out.element, p.lane, 0f, out.look).apply { state = Projectile.State.EJECTED }
-            events += BattleEvent.PushedOut(p.owner, p.lane)
-            if (fromLeft) 0 else board.cols - 1
-        } else {
-            board.insert(p.lane, fromLeft, shot)
+        val col = when {
+            full && wall >= 0 -> {
+                // Blocked by a wall, but this caster (the bot) pushes anyway: the globes in front of
+                // the wall move one cell, the front one breaking into the wall's cell.
+                breakingWall = Cell(p.lane, wall)
+                board.pushThroughWall(p.lane, fromLeft, shot)
+            }
+            full -> {
+                // Full row, but this caster pushes anyway: the far globe flies out at the opponent.
+                breakingWall = null
+                val out = board.pushThroughFullRow(p.lane, fromLeft, shot)
+                flying += Projectile(p.owner, out.element, p.lane, 0f, out.look).apply { state = Projectile.State.EJECTED }
+                events += BattleEvent.PushedOut(p.owner, p.lane)
+                if (fromLeft) 0 else board.cols - 1
+            }
+            else -> board.insert(p.lane, fromLeft, shot).also { c ->
+                // A shot that stops in a wall's cell has hit it: the wall breaks when the shot gets there.
+                breakingWall = if (wall >= 0 && c == wall) Cell(p.lane, wall) else null
+            }
         }
-        // A shot that stops in a wall's cell has hit it: the wall breaks when the shot gets there.
-        breakingWall = if (wall >= 0 && col == wall) Cell(p.lane, wall) else null
         pushShot = shot
         pushRow = p.lane
         pushCol = col
@@ -488,7 +526,7 @@ class Battle(
             Phase.POP -> {
                 board.remove(popping)
                 // An explosion breaks the walls right beside it in its row.
-                val broken = board.breakWallsBeside(popping)
+                val broken = board.breakWallsAround(popping)
                 if (broken.isNotEmpty()) events += BattleEvent.WallsBroken(broken, byShot = false)
                 popping = emptySet()
                 settle()
@@ -541,6 +579,14 @@ class Battle(
             g.drawCol = g.fromCol
             g.drawRow = g.fromRow
         }
+        board.settleWalls()
+    }
+
+    /** Where to draw the wall now at ([row], [col]), in rows: it falls with the globes (see [Board.applyGravity]). */
+    fun wallDrawRow(row: Int, col: Int): Float {
+        if (phase != Phase.FALL) return row.toFloat()
+        val from = board.wallFromRow(row, col)
+        return from + (row - from) * phaseProgress * phaseProgress
     }
 
     private fun animateGlobes(dt: Float) {

@@ -24,7 +24,7 @@ using System.Runtime.InteropServices;
 public static class SymbolCutter {
     // A square tile on black (a button, a wall block): crop a square around it (shrink < 1 trims a
     // glowing rim's halo) and round the corners (cornerFraction of the size).
-    public static string Tile(string src, string dst, int size, int threshold, double shrink, double cornerFraction) {
+    public static string Tile(string src, string dst, int size, int threshold, double shrink, double cornerFraction, bool squareFromTop) {
         using (Bitmap b = new Bitmap(src)) {
             int W = b.Width, H = b.Height;
             BitmapData d = b.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -42,6 +42,8 @@ public static class SymbolCutter {
             int x1 = W - 1; while (x1 > 0 && cols[x1] < H / 4) x1--;
             int y0 = 0; while (y0 < H - 1 && rows[y0] < W / 4) y0++;
             int y1 = H - 1; while (y1 > 0 && rows[y1] < W / 4) y1--;
+            // squareFromTop: the tile is square, so a glow or reflection below it is left out.
+            if (squareFromTop) y1 = Math.Min(y1, y0 + (x1 - x0));
             int side = (int)(Math.Max(x1 - x0, y1 - y0) * shrink);
             int cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
             using (Bitmap o = new Bitmap(size, size, PixelFormat.Format32bppArgb)) {
@@ -144,18 +146,25 @@ public static class SymbolCutter {
 $root = Join-Path $PSScriptRoot '..\..'
 $res = Join-Path $root 'app\src\main\res\drawable-nodpi'
 if ($Kind -eq 'walls') {
-    # The wall button (a square tile like the spell buttons) and the wall on the field: a glowing
-    # glass pane on black, keyed by brightness so its dark glass is see-through, cropped tight.
+    # The wall button (a square tile like the spell buttons), and the walls on the field: every
+    # originals/crystal_*.png (variants of one crystal brick wall, picked at random per wall) as a
+    # square tile with slightly rounded corners -> wall_block_1, wall_block_2, ...
     $art = Join-Path $root 'art\walls'
     $dir = (Resolve-Path $art).Path
+    $resDir = (Resolve-Path $res).Path
     New-Item -ItemType Directory -Force (Join-Path $art 'sprites') | Out-Null
+    Get-ChildItem $resDir -Filter 'wall_block*.webp' | Remove-Item
     $pngs = @()
-    "{0,-10} {1}" -f 'button', [SymbolCutter]::Tile("$dir\originals\button.png", "$dir\sprites\button.png", 256, 60, 0.95, 0.17)
-    "{0,-10} {1}" -f 'block', [SymbolCutter]::Cut("$dir\originals\block.png", "$dir\sprites\block.png", 192, $Lo, $Hi, 1.02, $false)
-    foreach ($t in @(@('button', 'wall_button'), @('block', 'wall_block'))) {
-        $out = (Resolve-Path $res).Path + "\$($t[1]).png"
-        Copy-Item "$dir\sprites\$($t[0]).png" $out -Force
-        $pngs += $out
+    "{0,-12} {1}" -f 'button', [SymbolCutter]::Tile("$dir\originals\button.png", "$dir\sprites\button.png", 256, 60, 0.95, 0.17, $false)
+    Copy-Item "$dir\sprites\button.png" "$resDir\wall_button.png" -Force
+    $pngs += "$resDir\wall_button.png"
+    $i = 1
+    foreach ($f in Get-ChildItem "$dir\originals" -Filter 'crystal_*.png' | Sort-Object Name) {
+        $sprite = "$dir\sprites\$($f.Name)"
+        "{0,-12} {1}" -f $f.BaseName, [SymbolCutter]::Tile($f.FullName, $sprite, 192, 30, 1.0, 0.08, $true)
+        Copy-Item $sprite "$resDir\wall_block_$i.png" -Force
+        $pngs += "$resDir\wall_block_$i.png"
+        $i++
     }
     & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files $pngs
     return

@@ -9,6 +9,8 @@ import android.text.InputFilter
 import android.view.WindowManager
 import android.widget.EditText
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.DashPathEffect
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -30,6 +32,7 @@ import com.an0obis.magicduel.game.BattleEvent
 import com.an0obis.magicduel.game.Caster
 import com.an0obis.magicduel.game.Element
 import com.an0obis.magicduel.game.Globe
+import com.an0obis.magicduel.game.Lesson
 import com.an0obis.magicduel.R
 import com.an0obis.magicduel.game.Opponent
 import com.an0obis.magicduel.game.Opponents
@@ -39,6 +42,7 @@ import com.an0obis.magicduel.game.Side
 import com.an0obis.magicduel.game.Spell
 import com.an0obis.magicduel.game.Tutorial
 import com.an0obis.magicduel.game.WallSpell
+import com.an0obis.magicduel.game.WallTutorial
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -103,7 +107,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /** A wall that just broke at ([x], [y]): it bursts apart over [WALL_BREAK_TIME]. */
-    private class BrokenWall(val x: Float, val y: Float) { var t = 0f }
+    private class BrokenWall(val x: Float, val y: Float, val look: Int) { var t = 0f }
 
     private class Bolt(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val color: Int) {
         var t = 0f
@@ -112,9 +116,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val prefs = context.getSharedPreferences("magic_duel", Context.MODE_PRIVATE)
     private var level = prefs.getInt(KEY_LEVEL, 0).coerceAtLeast(0)
     private var tutorialDone = prefs.getBoolean(KEY_TUTORIAL_DONE, level > 0)
+
+    /** The walls lesson (level 2) has been seen. */
+    private var wallTutorialDone = prefs.getBoolean(KEY_WALL_TUTORIAL_DONE, level > 1)
     private var played = prefs.getBoolean(KEY_PLAYED, level > 0)
     private var battle = Battle(Opponents.forLevel(level))
-    private var tutorial: Tutorial? = null
+    private var tutorial: Lesson? = null
     private val art = Art(context.resources, context.packageName)
     private val sounds = Sounds(context)
 
@@ -219,7 +226,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** Walls rising: per field cell, 0..1 as a new wall grows in (negative while it waits its turn). */
     private val wallRise = Array(Rules.ROWS) { FloatArray(Rules.COLS) { 1f } }
 
-    /** How visible each wall button is, 0..1: it fades away while its column's top cell is taken. */
+    /** How usable each wall button looks, 0..1: it fades to grey (disabled) while its column's top cell is taken. */
     private val wallButtonShow = FloatArray(Rules.COLS) { 1f }
     private val brokenWalls = ArrayList<BrokenWall>()
 
@@ -236,6 +243,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val dashed = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD) }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    /** Draws bitmaps in greys only: disabled wall buttons. */
+    private val greyPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    }
     private val sky = Paint()
     private val rect = RectF()
     private val srcRect = Rect()
@@ -354,7 +366,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         tilePop.forEach { it.fill(1f) }
         wallRise.forEach { it.fill(1f) }
         brokenWalls.clear()
-        for (col in wallButtonShow.indices) wallButtonShow[col] = if (battle.canRaiseWall(col)) 1f else 0f
+        for (col in wallButtonShow.indices) wallButtonShow[col] = if (battle.canPlayerCastWall(col)) 1f else 0f
         queueShift = 0f
     }
 
@@ -362,7 +374,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun startBattle() {
         battle = Battle(Opponents.forLevel(level))
         art.preload(battle.elements)
-        tutorial = if (level == 0 && !tutorialDone) Tutorial() else null
+        tutorial = when {
+            level == 0 && !tutorialDone -> Tutorial()
+            level == 1 && !wallTutorialDone -> WallTutorial()
+            else -> null
+        }
         resetEffects()
     }
 
@@ -376,6 +392,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         prefs.edit()
             .putInt(KEY_LEVEL, level)
             .putBoolean(KEY_TUTORIAL_DONE, tutorialDone)
+            .putBoolean(KEY_WALL_TUTORIAL_DONE, wallTutorialDone)
             .putBoolean(KEY_PLAYED, played)
             .putString(KEY_LANGUAGE, language)
             .putBoolean(KEY_SOUND, soundOn)
@@ -387,6 +404,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun restartGame() {
         level = 0
         tutorialDone = false
+        wallTutorialDone = false
         played = true
         save()
         startBattle()
@@ -409,6 +427,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         battle.update(dt)
         for (event in battle.drainEvents()) onEvent(event)
         tutorial?.update(dt)
+        if (tutorial is WallTutorial && tutorial?.done == true && !wallTutorialDone) {
+            wallTutorialDone = true
+            save()
+        }
         queueShift = max(0f, queueShift - dt / QUEUE_SHIFT_TIME)
 
         // Copy first: a delayed effect may schedule another one.
@@ -447,8 +469,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         bursts.removeAll { b -> b.t += dt; b.t >= HIT_TIME }
         for (row in wallRise) for (c in row.indices) if (row[c] < 1f) row[c] = min(1f, row[c] + dt / WALL_RISE_TIME)
         for (col in wallButtonShow.indices) {
-            val casting = battle.player.castWallColumn == col || battle.enemy.castWallColumn == col
-            val target = if (casting || battle.canRaiseWall(col)) 1f else 0f
+            // Usable: free below and not the bot's wall column; your own wall cast keeps its button lit.
+            val usable = battle.player.castWallColumn == col || battle.canPlayerCastWall(col)
+            val target = if (usable) 1f else 0f
             wallButtonShow[col] += (target - wallButtonShow[col]).coerceIn(-dt / WALL_BUTTON_FADE, dt / WALL_BUTTON_FADE)
         }
         brokenWalls.removeAll { b -> b.t += dt; b.t >= WALL_BREAK_TIME }
@@ -482,8 +505,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private fun onEvent(e: BattleEvent) {
         tutorial?.onEvent(e)
-        if (e is BattleEvent.Launched && e.side == Side.ENEMY) queueShift = 1f
-        if (e is BattleEvent.GameOver && e.winner == Side.PLAYER && tutorial != null) {
+        // The bot's queue slides on whenever its first move is done with: fired, walls cast, or dropped.
+        val botMoveDone = when (e) {
+            is BattleEvent.Launched -> e.side == Side.ENEMY
+            is BattleEvent.WallCastDone -> e.side == Side.ENEMY
+            is BattleEvent.WallCastCancelled -> e.side == Side.ENEMY
+            else -> false
+        }
+        if (botMoveDone) queueShift = 1f
+        if (e is BattleEvent.GameOver && e.winner == Side.PLAYER && tutorial is Tutorial) {
             tutorialDone = true
             save()
         }
@@ -508,10 +538,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 ringStyle[e.side.ordinal] = (ringStyle[e.side.ordinal] + 1) % Art.CAST_RING_STYLES
             }
             is BattleEvent.WallCastCancelled -> {
-                sounds.play(Sounds.Fx.UI_BACK, 0.8f)
-                afterglow[Side.PLAYER.ordinal] = 0f
-                texts += FloatText(s(R.string.cancelled), cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
+                afterglow[e.side.ordinal] = 0f
+                if (e.side == Side.PLAYER) {
+                    sounds.play(Sounds.Fx.UI_BACK, 0.8f)
+                    texts += FloatText(s(R.string.cancelled), cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
+                } else {
+                    // The bot's wall had nowhere to go: a quiet note under its queue, by the dropped move.
+                    texts += FloatText(s(R.string.cancelled), left + 0.72f * u, enemyTop + 2.05f * u, Pal.TEXT_DIM, 0.26f * u, 0.8f)
+                }
             }
+            is BattleEvent.WallCastDone -> Unit
             // New walls grow in from the bottom of the column up.
             is BattleEvent.WallsRaised -> {
                 afterglow[e.side.ordinal] = 1f
@@ -527,8 +563,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 e.cells.forEach {
                     val x = cellX(it.col.toFloat())
                     val y = cellY(it.row.toFloat())
-                    brokenWalls += BrokenWall(x, y)
-                    rings += Ring(x, y, mix(WALL_COLOR, WHITE, 0.4f), 0.2f * fu, 0.75f * fu, 0.3f)
+                    brokenWalls += BrokenWall(x, y, battle.board.wallLook(it.row, it.col))
+                    rings += Ring(x, y, mix(WALL_CRYSTAL, WHITE, 0.4f), 0.2f * fu, 0.75f * fu, 0.3f)
                 }
             }
             is BattleEvent.Launched -> {
@@ -686,7 +722,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             return true
         }
         for (col in 0 until Rules.COLS) {
-            if (!battle.canRaiseWall(col)) continue // its button is hidden
+            if (!battle.canPlayerCastWall(col)) continue // its button is disabled
             if (!wallButtonRect(col, rect).apply { inset(-0.08f * u, -0.12f * u) }.contains(x, y)) continue
             if (battle.tryCastWall(col)) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             return true
@@ -972,20 +1008,21 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The five wall buttons above the field. A button is hidden (it fades and shrinks away) while
-     * the cell right below it is taken by a wall or a globe. Like the spell grid, they dim while you
-     * cast; the wall being cast keeps its button in a glyph ring. The bot's wall cast rings its
-     * column's button too.
+     * The five wall buttons above the field (none on the first duel, where walls are locked). A button
+     * is disabled, grey and faded, while the cell right below it is taken by a wall or a globe. Like the
+     * spell grid, they dim while you cast; the wall being cast keeps its button in a glyph ring. The
+     * bot's wall cast rings its column's button too.
      */
     private fun drawWallButtons(c: Canvas) {
+        if (!battle.opponent.walls) return // walls are locked on the first duel
         val p = battle.player
         val locked = p.isCasting || !battle.started || battle.winner != null
         val size = (WALL_BUTTON * u).toInt().coerceAtLeast(8)
         for (col in 0 until Rules.COLS) {
+            // 1 = usable; fades to 0 (grey and see-through, disabled) while the cell below is taken or
+            // the bot is casting walls into this column (its ring shows around the grey button).
             val show = smooth01(wallButtonShow[col])
-            if (show <= 0.01f) continue
             wallButtonRect(col, rect)
-            rect.inset(rect.width() * 0.15f * (1f - show), rect.height() * 0.15f * (1f - show))
             for (side in Side.entries) {
                 val caster = battle.caster(side)
                 if (caster.castWallColumn != col) continue
@@ -994,6 +1031,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     if (side == Side.PLAYER) WALL_COLOR else Pal.ENEMY_HP, caster.castProgress, clock,
                 )
             }
+            if (show < 1f) {
+                greyPaint.alpha = (WALL_BUTTON_DISABLED_ALPHA * (1f - show)).toInt()
+                c.drawBitmap(art.wallButton(size), null, rect, greyPaint)
+            }
+            if (show <= 0.01f) continue
             bitmapPaint.alpha = (show * when {
                 p.castWallColumn == col -> 230
                 locked -> 130
@@ -1005,13 +1047,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The walls on the field, panes of magic glass: a new wall grows in (overshooting a little) with a
-     * flash, a standing one shimmers, and a broken one shatters into four flying shards.
+     * The walls on the field, arcane crystal bricks (a random variant each): a new wall grows in
+     * (overshooting a little) with a flash, a standing one shimmers, and a broken one shatters into
+     * four flying shards.
      */
     private fun drawWalls(c: Canvas) {
         val board = battle.board
         val size = (WALL_TILE * fu).toInt().coerceAtLeast(8)
-        val block = art.wallBlock(size)
         for (r in 0 until board.rows) for (col in 0 until board.cols) {
             if (!board.isWall(r, col)) continue
             val k = wallRise[r][col]
@@ -1019,21 +1061,22 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val scale = if (k < 1f) easeOutBack(k) else 1f
             val half = size * scale / 2f
             val x = cellX(col.toFloat())
-            val y = cellY(r.toFloat())
+            val y = cellY(battle.wallDrawRow(r, col)) // walls fall with the globes
             rect.set(x - half, y - half, x + half, y + half)
             // Standing walls shimmer gently, each in its own rhythm.
-            val shimmer = 0.82f + 0.18f * sin(clock * 2.6f + r * 1.7f + col * 2.3f)
+            val shimmer = 0.9f + 0.1f * sin(clock * 2.6f + r * 1.7f + col * 2.3f)
             bitmapPaint.alpha = (255 * min(1f, k * 2f) * shimmer).toInt()
-            c.drawBitmap(block, null, rect, bitmapPaint)
+            c.drawBitmap(art.wallBlock(size, board.wallLook(r, col)), null, rect, bitmapPaint)
             if (k < 1f) {
                 // A flash of conjuring light as it appears.
-                fill.color = withAlpha(WALL_COLOR, (110 * (1f - k)).toInt())
+                fill.color = withAlpha(WALL_CRYSTAL, (110 * (1f - k)).toInt())
                 c.drawRoundRect(rect, 0.06f * size, 0.06f * size, fill)
             }
         }
         // A broken wall shatters: its four quarters fly apart, spinning, and fade.
-        val q = block.width / 2
         for (b in brokenWalls) {
+            val block = art.wallBlock(size, b.look)
+            val q = block.width / 2
             val k = b.t / WALL_BREAK_TIME
             val fly = easeOut(k) * 0.45f * fu
             bitmapPaint.alpha = (255 * (1f - k) * (1f - k)).toInt()
@@ -1364,6 +1407,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             stroke.color = withAlpha(GOLD, (90 + 140 * pulse).toInt())
             stroke.strokeWidth = 0.06f * u
             c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
+        }
+        if (t.pointsAtWalls) {
+            val first = wallButtonRect(0, RectF())
+            val last = wallButtonRect(Rules.COLS - 1, RectF())
+            rect.set(first.left - 0.12f * u, first.top - 0.12f * u, last.right + 0.12f * u, last.bottom + 0.12f * u)
+            stroke.color = withAlpha(GOLD, (90 + 140 * pulse).toInt())
+            stroke.strokeWidth = 0.06f * u
+            c.drawRoundRect(rect, 0.25f * u, 0.25f * u, stroke)
         }
         val size = 0.28f * u
         val lineH = 0.38f * u
@@ -1757,7 +1808,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val won = winner == Side.PLAYER
         label(c, if (won) s(R.string.victory) else s(R.string.defeated), cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
         val subtitle = when {
-            won && tutorial != null -> s(R.string.tutorial_complete_next, opponentName(Opponents.forLevel(level + 1)))
+            won && tutorial is Tutorial -> s(R.string.tutorial_complete_next, opponentName(Opponents.forLevel(level + 1)))
             won -> s(R.string.next_fmt, opponentName(Opponents.forLevel(level + 1)))
             else -> s(R.string.wins_fmt, opponentName(battle.opponent))
         }
@@ -1770,6 +1821,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private companion object {
         const val KEY_LEVEL = "level"
         const val KEY_TUTORIAL_DONE = "tutorialDone"
+        const val KEY_WALL_TUTORIAL_DONE = "wallTutorialDone"
         const val KEY_PLAYED = "played"
         const val KEY_LANGUAGE = "language"
         const val KEY_SOUND = "sound"
@@ -1801,11 +1853,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val WALL_RISE_STAGGER = 0.07f
         const val WALL_BREAK_TIME = 0.35f
 
-        /** A wall button fades away (or back) over this long when its column's top cell fills (or frees up). */
+        /** A wall button fades to disabled (or back) over this long when its column's top cell fills (or frees up). */
+        const val WALL_BUTTON_DISABLED_ALPHA = 110
         const val WALL_BUTTON_FADE = 0.25f
 
-        /** Walls' colour: the gold glow of the wall button and the glass walls. */
+        /** Wall casts' colour: the gold glow of the wall button (its cast ring, the column glow). */
         val WALL_COLOR = 0xFFE8B15A.toInt()
+
+        /** The crystal walls' own light: blue-violet, for their flash as they rise and the ring when they shatter. */
+        val WALL_CRYSTAL = 0xFF7F8CFF.toInt()
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f
