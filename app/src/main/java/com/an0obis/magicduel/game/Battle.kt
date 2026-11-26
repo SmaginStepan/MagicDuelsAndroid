@@ -205,7 +205,7 @@ class Battle(
     }
 
     private fun randomMove(): Move =
-        if (opponent.wallChance > 0f && random.nextFloat() < opponent.wallChance) WallSpell(random.nextInt(Rules.COLS))
+        if (opponent.wallChance > 0f && random.nextFloat() < opponent.wallChance) WallSpell(Rules.WALL_COLUMNS.random(random))
         else Spell(elements.random(random), random.nextInt(Rules.ROWS))
 
     /** Wall casts that completed, waiting for the field to be still: (caster, column). */
@@ -288,9 +288,10 @@ class Battle(
 
     /**
      * True if walls can be cast into field column [column] at all: walls are unlocked (not on the
-     * first duel) and the column's top cell (right below its wall button) is empty.
+     * first duel), [column] is one of [Rules.WALL_COLUMNS] (not an edge column) and its top cell (right
+     * below its wall button) is empty.
      */
-    fun canRaiseWall(column: Int): Boolean = opponent.walls && board.isEmpty(0, column)
+    fun canRaiseWall(column: Int): Boolean = opponent.walls && column in Rules.WALL_COLUMNS && board.isEmpty(0, column)
 
     /**
      * True if the player may start walls in [column]: they can be raised there ([canRaiseWall]) and
@@ -371,7 +372,7 @@ class Battle(
                 // a planned wall into a blocked column moves to a free one (or becomes a shot).
                 (plannedMoves.first() as? WallSpell)?.let { wall ->
                     if (!canRaiseWall(wall.column)) {
-                        val free = (0 until board.cols).filter(::canRaiseWall)
+                        val free = Rules.WALL_COLUMNS.filter(::canRaiseWall)
                         plannedMoves[0] = if (free.isEmpty()) Spell(elements.random(random), random.nextInt(Rules.ROWS))
                         else WallSpell(free.random(random))
                     }

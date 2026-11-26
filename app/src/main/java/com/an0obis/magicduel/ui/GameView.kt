@@ -721,7 +721,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             if (battle.cancelCast()) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             return true
         }
-        for (col in 0 until Rules.COLS) {
+        for (col in Rules.WALL_COLUMNS) {
             if (!battle.canPlayerCastWall(col)) continue // its button is disabled
             if (!wallButtonRect(col, rect).apply { inset(-0.08f * u, -0.12f * u) }.contains(x, y)) continue
             if (battle.tryCastWall(col)) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -1008,17 +1008,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The five wall buttons above the field (none on the first duel, where walls are locked). A button
-     * is disabled, grey and faded, while the cell right below it is taken by a wall or a globe. Like the
-     * spell grid, they dim while you cast; the wall being cast keeps its button in a glyph ring. The
-     * bot's wall cast rings its column's button too.
+     * The three wall buttons over the middle columns 2–4 ([Rules.WALL_COLUMNS]; none on the first duel).
+     * A button is disabled, grey and faded, while the cell right below it is taken by a wall or a globe.
+     * Like the spell grid, they dim while you cast; the wall being cast keeps its button in a glyph
+     * ring. The bot's wall cast rings its column's button too.
      */
     private fun drawWallButtons(c: Canvas) {
         if (!battle.opponent.walls) return // walls are locked on the first duel
         val p = battle.player
         val locked = p.isCasting || !battle.started || battle.winner != null
         val size = (WALL_BUTTON * u).toInt().coerceAtLeast(8)
-        for (col in 0 until Rules.COLS) {
+        for (col in Rules.WALL_COLUMNS) {
             // 1 = usable; fades to 0 (grey and see-through, disabled) while the cell below is taken or
             // the bot is casting walls into this column (its ring shows around the grey button).
             val show = smooth01(wallButtonShow[col])
@@ -1409,8 +1409,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
         }
         if (t.pointsAtWalls) {
-            val first = wallButtonRect(0, RectF())
-            val last = wallButtonRect(Rules.COLS - 1, RectF())
+            val first = wallButtonRect(Rules.WALL_COLUMNS.first, RectF())
+            val last = wallButtonRect(Rules.WALL_COLUMNS.last, RectF())
             rect.set(first.left - 0.12f * u, first.top - 0.12f * u, last.right + 0.12f * u, last.bottom + 0.12f * u)
             stroke.color = withAlpha(GOLD, (90 + 140 * pulse).toInt())
             stroke.strokeWidth = 0.06f * u

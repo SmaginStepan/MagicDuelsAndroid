@@ -79,6 +79,9 @@ object Rules {
     /** The chance that a move the bot plans is a wall (in a random column) instead of a shot. */
     const val BOT_WALL_CHANCE = 0.2f
 
+    /** The field columns walls can be cast into: the middle three (2–4), not the edge columns. */
+    val WALL_COLUMNS = 1 until COLS - 1
+
     // Board animation steps, in seconds.
     const val FALL_TIME = 0.22f
     const val POP_TIME = 0.38f

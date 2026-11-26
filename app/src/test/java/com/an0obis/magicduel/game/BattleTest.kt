@@ -355,15 +355,32 @@ class BattleTest {
 
     @Test
     fun wallsCanOnlyBeCastIntoAColumnWhoseTopCellIsFree() {
-        val board = Board.parse("F....", "W#...", "E#...", "A#...", "F#...")
+        val board = Board.parse(".F...", ".W#..", ".E#..", ".A#..", ".F#..")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
-        assertFalse(b.canRaiseWall(0)) // a globe sits right below the button
-        assertFalse(b.tryCastWall(0))
-        assertTrue(b.canRaiseWall(1)) // walls below, but the top cell is free
-        assertTrue(b.tryCastWall(1))
+        assertFalse(b.canRaiseWall(1)) // a globe sits right below the button
+        assertFalse(b.tryCastWall(1))
+        assertTrue(b.canRaiseWall(2)) // walls below, but the top cell is free
+        assertTrue(b.tryCastWall(2))
         run(b, b.player.castTime + 0.1f)
-        assertEquals("F#...", board.describe()[0])
-        assertFalse(b.canRaiseWall(1)) // now full: its button hides
+        assertEquals(".F#..", board.describe()[0])
+        assertFalse(b.canRaiseWall(2)) // now full: its button is disabled
+    }
+
+    @Test
+    fun wallsCanOnlyBeCastIntoTheMiddleColumns() {
+        val board = Board.parse(".....", ".....", ".....", ".....", ".....")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        assertEquals(listOf(1, 2, 3), Rules.WALL_COLUMNS.toList())
+        assertFalse(b.canRaiseWall(0))
+        assertFalse(b.canRaiseWall(4))
+        assertFalse(b.tryCastWall(0))
+        assertFalse(b.tryCastWall(4))
+        assertTrue((1..3).all { b.canRaiseWall(it) })
+        // Bots plan walls only there too.
+        val mage = Opponent("Wall mage", AvatarKind.MAGE, hp = 100, wallChance = 1f)
+        repeat(20) { seed ->
+            assertTrue(Battle(mage, seed = seed.toLong()).botQueue.all { (it as WallSpell).column in Rules.WALL_COLUMNS })
+        }
     }
 
     @Test
@@ -409,7 +426,7 @@ class BattleTest {
         assertFalse(b.canPlayerCastWall(column))
         assertFalse(b.tryCastWall(column))
         // Any other free column is fine.
-        val other = (column + 1) % Rules.COLS
+        val other = Rules.WALL_COLUMNS.first { it != column }
         assertTrue(b.tryCastWall(other))
     }
 
@@ -417,7 +434,7 @@ class BattleTest {
     fun cancellingAWallCastRaisesNothing() {
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
-        assertTrue(b.tryCastWall(0))
+        assertTrue(b.tryCastWall(1))
         run(b, 0.5f)
         assertTrue(b.cancelCast())
         run(b, 3f)

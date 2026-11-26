@@ -54,7 +54,8 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Impacts are resolved one at a time; a shot that arrives while the field is moving waits at the edge.
 
 ## Walls
-- Five **wall buttons** sit above the field, one over each column. Tapping one casts walls: a long cast
+- Three **wall buttons** sit above the field, over the middle columns 2–4 (`Rules.WALL_COLUMNS`); the edge
+  columns 1 and 5 can't be walled, by you or the bot. Tapping one casts walls: a long cast
   (1.25× the caster's slowest spell, `Rules.WALL_CAST_FACTOR`: about 11.8 s for you, longer than any spell)
   that takes your one casting slot like a spell and can be cancelled the same way. The spell grid isn't
   touched. While it's cast, the button sits in a glyph ring and the column glows.
@@ -74,7 +75,7 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - An explosion **breaks the walls right next to it**: left, right, above and below (not diagonally).
   Whatever stood on a broken wall then falls.
 - Walls don't count for lines of 3: a wall between two globes breaks the line.
-- Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random column
+- Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random middle column
   (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3). The same
   rule holds for bots: if that column's top cell is taken when its turn comes, it picks a free column
   instead (or casts a shot if every column is blocked). If the column fills up while the bot is still

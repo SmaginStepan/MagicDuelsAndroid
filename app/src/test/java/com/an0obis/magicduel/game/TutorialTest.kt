@@ -76,10 +76,10 @@ class TutorialTest {
         assertTrue(Opponents.forLevel(1).walls)
         assertTrue(Opponents.forLevel(2).walls)
         val first = Battle(Opponents.forLevel(0), seed = 1, introTime = 0f)
-        assertFalse(first.canRaiseWall(0))
-        assertFalse(first.tryCastWall(0))
+        assertFalse(first.canRaiseWall(1))
+        assertFalse(first.tryCastWall(1))
         val second = Battle(Opponents.forLevel(1), seed = 1, startBoard = Board.parse(".....", ".....", ".....", ".....", "....."), introTime = 0f)
-        assertTrue(second.tryCastWall(0))
+        assertTrue(second.tryCastWall(1))
     }
 
     @Test
