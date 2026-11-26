@@ -244,10 +244,10 @@ class BattleTest {
     @Test
     fun enemyShotCrossesAnEmptyFieldToTheLeftEdge() {
         // The bot waits idleTime / 2 (30 s) before its first cast, then 60 s between casts.
-        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 60f)
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 60f, wallChance = 0f)
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(mage, seed = 9, startBoard = board, introTime = 0f)
-        val shot = b.botQueue[0]
+        val shot = (b.botQueue[0] as Spell).shot
         // Slide across (up to 6 cells), freeze in place, then fall to the bottom row.
         run(b, 30f + Rules.castTime(mage.castTime, shot.lane) + Rules.FLIGHT_TIME + 6f / Rules.SHOT_SPEED + Rules.FREEZE_TIME + 1f)
         assertEquals("${Board.code(shot.element)}....", board.describe()[4])
@@ -255,7 +255,7 @@ class BattleTest {
 
     @Test
     fun botCastsTheHeadOfItsQueueThenPlansANewShotAtTheTail() {
-        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.5f, idleTime = 0.5f)
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.5f, idleTime = 0.5f, wallChance = 0f)
         val b = Battle(mage, seed = 5, introTime = 0f)
         assertEquals(Rules.BOT_SEQUENCE_LENGTH, b.botQueue.size)
         var before = b.botQueue.toList()
@@ -266,7 +266,7 @@ class BattleTest {
             t += 0.02f
             for (e in b.drainEvents()) {
                 if (e !is BattleEvent.Launched || e.side != Side.ENEMY) continue
-                assertEquals(before.first(), Shot(e.element, e.lane))
+                assertEquals(before.first(), Spell(e.element, e.lane))
                 val now = b.botQueue.toList()
                 assertEquals(Rules.BOT_SEQUENCE_LENGTH, now.size)
                 assertEquals(before.drop(1), now.dropLast(1))
@@ -279,7 +279,7 @@ class BattleTest {
 
     @Test
     fun botPlanIsRandomNotARepeatingLoop() {
-        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.2f, idleTime = 0.2f)
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.2f, idleTime = 0.2f, wallChance = 0f)
         val b = Battle(mage, seed = 11, introTime = 0f)
         // Everything the bot plans: its first queue, then the shot added at the tail after each cast.
         // (The duel itself may end before 20 shots are fired: the idle player gets pushed out.)
@@ -301,9 +301,9 @@ class BattleTest {
         // and the globe pushed off the left edge hits the player. The bot never backfires.
         val full = Board.parse("FWEAF", "EAFWE", "FWEAF", "EAFWE", "FWEAF")
         // The bot waits idleTime / 2 (20 s) before its first cast, then 40 s between casts.
-        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 40f)
+        val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.3f, idleTime = 40f, wallChance = 0f)
         val b = Battle(mage, seed = 4, startBoard = full, introTime = 0f)
-        val shot = b.botQueue[0]
+        val shot = (b.botQueue[0] as Spell).shot
         val events = mutableListOf<BattleEvent>()
         var t = 0f
         while (t < 20f + Rules.castTime(mage.castTime, shot.lane) + Rules.FLIGHT_TIME + 2f) {
@@ -324,5 +324,94 @@ class BattleTest {
         run(b, 20f)
         assertTrue(b.projectiles.none { it.owner == Side.ENEMY })
         assertFalse(b.enemy.isCasting)
+    }
+
+    // ---------------------------------------------------------------- walls
+
+    private fun runCollecting(b: Battle, seconds: Float): List<BattleEvent> {
+        val events = mutableListOf<BattleEvent>()
+        var t = 0f
+        while (t < seconds) {
+            b.update(0.02f)
+            t += 0.02f
+            events += b.drainEvents()
+        }
+        return events
+    }
+
+    @Test
+    fun aWallCastIsShorterThanAnySpellAndRaisesWallsInItsColumn() {
+        val board = Board.parse(".....", ".....", ".....", "..F..", "..W..")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        assertTrue(b.tryCastWall(2))
+        assertFalse(b.tryCast(4, 0)) // one cast at a time
+        val wallTime = b.player.castTime
+        assertTrue((0 until Rules.ROWS).all { wallTime < Rules.castTime(Rules.PLAYER_CAST_TIME, it) })
+        val events = runCollecting(b, wallTime + 0.1f)
+        assertEquals(listOf("..#..", "..#..", "..#..", "..F..", "..W.."), board.describe())
+        assertTrue(events.contains(BattleEvent.WallsRaised(Side.PLAYER, 2, listOf(Cell(0, 2), Cell(1, 2), Cell(2, 2)))))
+        assertFalse(b.player.isCasting)
+    }
+
+    @Test
+    fun cancellingAWallCastRaisesNothing() {
+        val board = Board.parse(".....", ".....", ".....", ".....", ".....")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        assertTrue(b.tryCastWall(0))
+        run(b, 0.5f)
+        assertTrue(b.cancelCast())
+        run(b, 3f)
+        assertTrue(board.describe().none { '#' in it })
+    }
+
+    @Test
+    fun aShotBreaksTheWallItReachesAndStopsThere() {
+        val board = Board.parse(".....", ".....", ".....", ".....", "..#.E")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[4, 0] = Element.WATER
+        assertTrue(b.tryCast(4, 0))
+        val events = runCollecting(b, shotTime(4))
+        assertEquals("..W.E", board.describe()[4])
+        assertFalse(board.isWall(4, 2))
+        assertTrue(events.contains(BattleEvent.WallsBroken(listOf(Cell(4, 2)), byShot = true)))
+    }
+
+    @Test
+    fun aShotBlockedByAWallBouncesBack() {
+        // The stretch in front of the wall is full: the shot backfires.
+        val board = Board.parse(".....", ".....", ".....", ".....", "FW#..")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[4, 0] = Element.EARTH
+        assertTrue(b.tryCast(4, 0))
+        run(b, shotTime(4))
+        assertEquals(Rules.PLAYER_HP - Rules.BACKFIRE_DAMAGE, b.player.hp)
+        assertEquals("FW#..", board.describe()[4])
+    }
+
+    @Test
+    fun anExplosionBreaksTheWallBesideIt() {
+        // F into ".FF#." packs against the wall: FFF explodes and breaks the wall next to it.
+        val board = Board.parse(".....", ".....", ".....", "...E.", ".FF#.")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[4, 0] = Element.FIRE
+        assertTrue(b.tryCast(4, 0))
+        val events = runCollecting(b, shotTime(4))
+        assertEquals(dummy.hp - Rules.matchDamage(3, 1), b.enemy.hp)
+        assertTrue(events.contains(BattleEvent.WallsBroken(listOf(Cell(4, 3)), byShot = false)))
+        // The earth globe that stood on the wall fell into its place.
+        assertEquals(listOf(".....", ".....", ".....", ".....", "...E."), board.describe())
+    }
+
+    @Test
+    fun theBotConjuresWallsToo() {
+        val mage = Opponent("Wall mage", AvatarKind.MAGE, hp = 100, castTime = 0.4f, idleTime = 0.4f, wallChance = 1f)
+        val board = Board.parse(".....", ".....", ".....", ".....", ".....")
+        val b = Battle(mage, seed = 3, startBoard = board, introTime = 0f)
+        assertTrue(b.botQueue.all { it is WallSpell })
+        val column = (b.botQueue[0] as WallSpell).column
+        val events = runCollecting(b, 1f)
+        assertTrue(events.contains(BattleEvent.WallCastStarted(Side.ENEMY, column)))
+        assertTrue(events.any { it is BattleEvent.WallsRaised && it.side == Side.ENEMY && it.column == column && it.cells.size == 5 })
+        assertTrue(board.describe().all { it[column] == '#' })
     }
 }

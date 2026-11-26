@@ -25,6 +25,8 @@ data class Opponent(
     val dummyIndex: Int = -1,
     val titleIndex: Int = -1,
     val nameIndex: Int = -1,
+    /** The chance that a move this bot plans is a wall instead of a shot. */
+    val wallChance: Float = Rules.BOT_WALL_CHANCE,
 ) {
     val fires: Boolean get() = kind == AvatarKind.MAGE
 }

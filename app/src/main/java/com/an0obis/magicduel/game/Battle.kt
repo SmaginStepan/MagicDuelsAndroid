@@ -23,46 +23,72 @@ enum class Side {
 data class Shot(val element: Element, val lane: Int)
 
 /**
- * A duellist: hit points plus the spell currently being cast. Casting into a lane takes
- * [Rules.castTime] of the caster's [baseCastTime]: longer for the top lanes.
+ * What a caster can cast: a [Spell] that flies into a lane, or a [WallSpell] that conjures walls
+ * into a field column.
+ */
+sealed interface Move
+
+/** An element shot into [Shot.lane]. */
+data class Spell(val shot: Shot) : Move {
+    constructor(element: Element, lane: Int) : this(Shot(element, lane))
+}
+
+/** Walls in every empty cell of field column [column]. */
+data class WallSpell(val column: Int) : Move
+
+/**
+ * A duellist: hit points plus the move currently being cast. Casting a spell into a lane takes
+ * [Rules.castTime] of the caster's [baseCastTime] (longer for the top lanes); a wall takes
+ * [Rules.wallCastTime], shorter than any spell.
  */
 class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float) {
     var hp = maxHp
         private set
-    var castElement: Element? = null
-        private set
-    var castLane = -1
+
+    /** The move being cast, or null. */
+    var castMove: Move? = null
         private set
     private var castT = 0f
+
+    /** The element of the spell being cast (null when casting a wall or nothing). */
+    val castElement: Element? get() = (castMove as? Spell)?.shot?.element
+
+    /** The lane of the spell being cast, or -1. */
+    val castLane: Int get() = (castMove as? Spell)?.shot?.lane ?: -1
+
+    /** The column of the wall being cast, or -1. */
+    val castWallColumn: Int get() = (castMove as? WallSpell)?.column ?: -1
 
     /** How long the current cast takes in total (it depends on the lane). */
     var castTime = 0f
         private set
 
-    val isCasting: Boolean get() = castElement != null
+    val isCasting: Boolean get() = castMove != null
     val castProgress: Float get() = if (isCasting) (castT / castTime).coerceIn(0f, 1f) else 0f
 
-    internal fun startCast(element: Element, lane: Int) {
-        castElement = element
-        castLane = lane
+    internal fun startCast(move: Move) {
+        castMove = move
         castT = 0f
-        castTime = Rules.castTime(baseCastTime, lane)
+        castTime = when (move) {
+            is Spell -> Rules.castTime(baseCastTime, move.shot.lane)
+            is WallSpell -> Rules.wallCastTime(baseCastTime)
+        }
     }
+
+    internal fun startCast(element: Element, lane: Int) = startCast(Spell(element, lane))
 
     internal fun cancelCast() {
-        castElement = null
-        castLane = -1
+        castMove = null
         castT = 0f
     }
 
-    /** Advances the cast and returns the shot once casting completes. */
-    internal fun advance(dt: Float): Shot? {
-        val element = castElement ?: return null
+    /** Advances the cast and returns the move once casting completes. */
+    internal fun advance(dt: Float): Move? {
+        val move = castMove ?: return null
         castT += dt
         if (castT < castTime) return null
-        val shot = Shot(element, castLane)
         cancelCast()
-        return shot
+        return move
     }
 
     internal fun takeDamage(amount: Int) {
@@ -102,6 +128,18 @@ sealed interface BattleEvent {
 
     /** The player cancelled a cast: nothing was fired and the dissolved spells in [cells] came back. */
     data class CastCancelled(val side: Side, val element: Element, val lane: Int, val cells: List<Cell>) : BattleEvent
+
+    /** [side] started conjuring walls into field column [column]. */
+    data class WallCastStarted(val side: Side, val column: Int) : BattleEvent
+
+    /** The player cancelled a wall cast. */
+    data class WallCastCancelled(val side: Side, val column: Int) : BattleEvent
+
+    /** Walls rose in [cells] (empty if the column had no room). */
+    data class WallsRaised(val side: Side, val column: Int, val cells: List<Cell>) : BattleEvent
+
+    /** Walls in [cells] broke: hit by a shot ([byShot]) or beside an explosion. */
+    data class WallsBroken(val cells: List<Cell>, val byShot: Boolean) : BattleEvent
     data class Launched(val side: Side, val element: Element, val lane: Int) : BattleEvent
     data class Landed(val side: Side, val element: Element, val row: Int, val col: Int) : BattleEvent
     data class Backfired(val side: Side, val lane: Int) : BattleEvent
@@ -146,20 +184,29 @@ class Battle(
     val player = Caster(Side.PLAYER, Rules.PLAYER_HP, Rules.PLAYER_CAST_TIME)
     val enemy = Caster(Side.ENEMY, opponent.hp, opponent.castTime)
 
-    private val plannedShots = ArrayDeque<Shot>()
+    private val plannedMoves = ArrayDeque<Move>()
 
     /**
-     * The bot's visible plan: its next [Rules.BOT_SEQUENCE_LENGTH] shots, generated randomly in advance.
-     * The first one is cast next; once it has been cast it leaves the queue and a newly planned
-     * shot joins at the end.
+     * The bot's visible plan: its next [Rules.BOT_SEQUENCE_LENGTH] moves (shots, and now and then a
+     * wall), generated randomly in advance. The first one is cast next; once it has been cast it
+     * leaves the queue and a newly planned move joins at the end.
      */
-    val botQueue: List<Shot> get() = plannedShots
+    val botQueue: List<Move> get() = plannedMoves
 
     init {
-        if (opponent.fires) repeat(Rules.BOT_SEQUENCE_LENGTH) { plannedShots.addLast(randomShot()) }
+        if (opponent.fires) repeat(Rules.BOT_SEQUENCE_LENGTH) { plannedMoves.addLast(randomMove()) }
     }
 
-    private fun randomShot() = Shot(elements.random(random), random.nextInt(Rules.ROWS))
+    private fun randomMove(): Move =
+        if (opponent.wallChance > 0f && random.nextFloat() < opponent.wallChance) WallSpell(random.nextInt(Rules.COLS))
+        else Spell(elements.random(random), random.nextInt(Rules.ROWS))
+
+    /** Wall casts that completed, waiting for the field to be still: (caster, column). */
+    private val pendingWalls = ArrayDeque<Pair<Side, Int>>()
+
+    /** The wall a sliding shot is about to break (it breaks when the shot gets there), or null. */
+    var breakingWall: Cell? = null
+        private set
 
     private var botWait = opponent.idleTime * 0.5f
 
@@ -218,19 +265,42 @@ class Battle(
      */
     fun cancelCast(): Boolean {
         if (winner != null) return false
-        val element = player.castElement ?: return false
-        val lane = player.castLane
-        player.cancelCast()
-        events += BattleEvent.CastCancelled(Side.PLAYER, element, lane, spells.restore())
+        when (val move = player.castMove) {
+            is Spell -> {
+                player.cancelCast()
+                events += BattleEvent.CastCancelled(Side.PLAYER, move.shot.element, move.shot.lane, spells.restore())
+            }
+            is WallSpell -> {
+                player.cancelCast()
+                events += BattleEvent.WallCastCancelled(Side.PLAYER, move.column)
+            }
+            null -> return false
+        }
+        return true
+    }
+
+    /**
+     * The player taps the wall button above field column [column]: after a short cast, walls rise in
+     * every empty cell of that column. Returns false if it can't be cast right now.
+     */
+    fun tryCastWall(column: Int): Boolean {
+        if (!started || winner != null || player.isCasting) return false
+        if (column !in 0 until board.cols) return false
+        player.startCast(WallSpell(column))
+        events += BattleEvent.WallCastStarted(Side.PLAYER, column)
         return true
     }
 
     fun update(dt: Float) {
         time += dt
         if (winner == null && started) {
-            player.advance(dt)?.let { shot ->
-                launch(Side.PLAYER, shot)
-                events += BattleEvent.SpellsRefilled(spells.refill())
+            when (val move = player.advance(dt)) {
+                is Spell -> {
+                    launch(Side.PLAYER, move.shot)
+                    events += BattleEvent.SpellsRefilled(spells.refill())
+                }
+                is WallSpell -> pendingWalls.addLast(Side.PLAYER to move.column)
+                null -> Unit
             }
             updateBot(dt)
             updateProjectiles(dt)
@@ -247,22 +317,36 @@ class Battle(
     }
 
     private fun updateBot(dt: Float) {
-        if (plannedShots.isEmpty()) return
+        if (plannedMoves.isEmpty()) return
         if (enemy.isCasting) {
-            enemy.advance(dt)?.let { shot ->
-                launch(Side.ENEMY, shot)
-                plannedShots.removeFirst()
-                plannedShots.addLast(randomShot())
-                botWait = opponent.idleTime
+            val move = enemy.advance(dt) ?: return
+            when (move) {
+                is Spell -> launch(Side.ENEMY, move.shot)
+                is WallSpell -> pendingWalls.addLast(Side.ENEMY to move.column)
             }
+            plannedMoves.removeFirst()
+            plannedMoves.addLast(randomMove())
+            botWait = opponent.idleTime
         } else {
             botWait -= dt
             if (botWait <= 0f) {
-                val shot = plannedShots.first()
-                enemy.startCast(shot.element, shot.lane)
-                events += BattleEvent.CastStarted(Side.ENEMY, shot.element, shot.lane)
+                when (val move = plannedMoves.first()) {
+                    is Spell -> {
+                        enemy.startCast(move)
+                        events += BattleEvent.CastStarted(Side.ENEMY, move.shot.element, move.shot.lane)
+                    }
+                    is WallSpell -> {
+                        enemy.startCast(move)
+                        events += BattleEvent.WallCastStarted(Side.ENEMY, move.column)
+                    }
+                }
             }
         }
+    }
+
+    /** Raises the walls of a completed wall cast (the field is still). */
+    private fun raiseWalls(side: Side, column: Int) {
+        events += BattleEvent.WallsRaised(side, column, board.raiseWalls(column))
     }
 
     private fun updateProjectiles(dt: Float) {
@@ -296,6 +380,11 @@ class Battle(
             }
         }
         while (phase == Phase.IDLE && winner == null) {
+            // Finished wall casts first: they only fill empty cells and the field stays still.
+            pendingWalls.removeFirstOrNull()?.let { (side, column) ->
+                raiseWalls(side, column)
+                continue
+            }
             val next = flying.filter { it.state == Projectile.State.WAITING }.minByOrNull { it.arrivalOrder } ?: break
             resolveImpact(next)
         }
@@ -303,15 +392,18 @@ class Battle(
     }
 
     private fun resolveImpact(p: Projectile) {
-        val full = !board.canInsert(p.lane)
-        if (full && !p.owner.pushesFullRows) {
+        val fromLeft = p.owner.fromLeft
+        val full = !board.canInsert(p.lane, fromLeft)
+        // A wall with globes packed against it holds: the shot can't go anywhere, whoever cast it.
+        val walled = full && board.firstWall(p.lane, fromLeft) >= 0
+        if (full && (walled || !p.owner.pushesFullRows)) {
             // No free space in the row: the spell strikes its own caster.
             p.state = Projectile.State.BOUNCING
             events += BattleEvent.Backfired(p.owner, p.lane)
             return
         }
         p.state = Projectile.State.DONE
-        val fromLeft = p.owner.fromLeft
+        val wall = board.firstWall(p.lane, fromLeft)
         snapshotPositions()
         // The shot enters one cell outside the field edge and slides until it is blocked.
         val shot = Globe(p.element, p.look).apply {
@@ -331,6 +423,8 @@ class Battle(
         } else {
             board.insert(p.lane, fromLeft, shot)
         }
+        // A shot that stops in a wall's cell has hit it: the wall breaks when the shot gets there.
+        breakingWall = if (wall >= 0 && col == wall) Cell(p.lane, wall) else null
         pushShot = shot
         pushRow = p.lane
         pushCol = col
@@ -365,7 +459,12 @@ class Battle(
             Phase.PUSH -> {
                 // A shot that stopped over an empty cell freezes in place before it falls, so it never
                 // drops in comet form; otherwise the field settles at once.
-                val falls = pushRow + 1 < board.rows && board[pushRow + 1, pushCol] == null
+                breakingWall?.let {
+                    board.removeWall(it.row, it.col)
+                    events += BattleEvent.WallsBroken(listOf(it), byShot = true)
+                    breakingWall = null
+                }
+                val falls = pushRow + 1 < board.rows && board.isEmpty(pushRow + 1, pushCol)
                 freezeShot()
                 if (falls) startPhase(Phase.FREEZE, Rules.FREEZE_TIME) else settle()
             }
@@ -373,6 +472,9 @@ class Battle(
             Phase.FALL -> checkMatches()
             Phase.POP -> {
                 board.remove(popping)
+                // An explosion breaks the walls right beside it in its row.
+                val broken = board.breakWallsBeside(popping)
+                if (broken.isNotEmpty()) events += BattleEvent.WallsBroken(broken, byShot = false)
                 popping = emptySet()
                 settle()
             }

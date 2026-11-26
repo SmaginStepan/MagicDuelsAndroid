@@ -1,15 +1,17 @@
-# Cuts glowing Midjourney art on black into transparent square sprites:
+﻿# Cuts glowing Midjourney art on black into transparent square sprites:
 #
 #   cut-symbols.ps1                  element symbols: art/symbols/originals -> res/drawable-nodpi/sym_*.webp
 #                                    (the new spells growing in the spell grid, see art/symbols/PROMPTS.md)
 #   cut-symbols.ps1 -Kind rings      cast rings: art/rings/originals -> res/drawable-nodpi/ring_*.webp
 #                                    (glyph rings around a spell being cast, see art/rings/PROMPTS.md)
+#   cut-symbols.ps1 -Kind walls      wall button and wall block: art/walls/originals -> wall_*.webp
+#                                    (square tiles with rounded corners, see art/walls/PROMPTS.md)
 #
 # Alpha comes from brightness (ramp Lo..Hi) and the colour is un-multiplied, so drawing a sprite over
 # black gives back the original. The crop is a square around the visible part, centred on it. Symbols
 # get some margin and their outer ring fades out, so faint background haze never shows as a box;
 # rings are cropped tight, their outer edge on the sprite's edge.
-param([ValidateSet('symbols', 'rings')][string]$Kind = 'symbols', [int]$Lo = 24, [int]$Hi = 90)
+param([ValidateSet('symbols', 'rings', 'walls')][string]$Kind = 'symbols', [int]$Lo = 24, [int]$Hi = 90)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -20,6 +22,58 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 public static class SymbolCutter {
+    // A square tile on black (a button, a wall block): crop a square around it (shrink < 1 trims a
+    // glowing rim's halo) and round the corners (cornerFraction of the size).
+    public static string Tile(string src, string dst, int size, int threshold, double shrink, double cornerFraction) {
+        using (Bitmap b = new Bitmap(src)) {
+            int W = b.Width, H = b.Height;
+            BitmapData d = b.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            int s = d.Stride;
+            byte[] px = new byte[s * H];
+            Marshal.Copy(d.Scan0, px, 0, px.Length);
+            b.UnlockBits(d);
+            int[] cols = new int[W], rows = new int[H];
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++) {
+                    int i = y * s + x * 4;
+                    if (Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])) > threshold) { cols[x]++; rows[y]++; }
+                }
+            int x0 = 0; while (x0 < W - 1 && cols[x0] < H / 4) x0++;
+            int x1 = W - 1; while (x1 > 0 && cols[x1] < H / 4) x1--;
+            int y0 = 0; while (y0 < H - 1 && rows[y0] < W / 4) y0++;
+            int y1 = H - 1; while (y1 > 0 && rows[y1] < W / 4) y1--;
+            int side = (int)(Math.Max(x1 - x0, y1 - y0) * shrink);
+            int cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            using (Bitmap o = new Bitmap(size, size, PixelFormat.Format32bppArgb)) {
+                using (Graphics g = Graphics.FromImage(o)) {
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    using (ImageAttributes a = new ImageAttributes()) {
+                        a.SetWrapMode(WrapMode.TileFlipXY);
+                        g.DrawImage(b, new Rectangle(0, 0, size, size), cx - side / 2, cy - side / 2, side, side, GraphicsUnit.Pixel, a);
+                    }
+                }
+                BitmapData od = o.LockBits(new Rectangle(0, 0, size, size), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+                byte[] op = new byte[od.Stride * size];
+                Marshal.Copy(od.Scan0, op, 0, op.Length);
+                double r = size * cornerFraction, f = Math.Max(1.0, size * 0.01);
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++) {
+                        double qx = Math.Max(Math.Max(r - (x + 0.5), (x + 0.5) - (size - r)), 0);
+                        double qy = Math.Max(Math.Max(r - (y + 0.5), (y + 0.5) - (size - r)), 0);
+                        double edge = Math.Min(Math.Min(x + 0.5, size - x - 0.5), Math.Min(y + 0.5, size - y - 0.5));
+                        double a = (qx > 0 && qy > 0) ? (r - Math.Sqrt(qx * qx + qy * qy)) / f : edge / f;
+                        op[y * od.Stride + x * 4 + 3] = (byte)(Math.Min(1.0, Math.Max(0.0, a)) * 255);
+                    }
+                Marshal.Copy(op, 0, od.Scan0, op.Length);
+                o.UnlockBits(od);
+                o.Save(dst, ImageFormat.Png);
+            }
+            return String.Format("tile=({0},{1})-({2},{3}) side={4}", x0, y0, x1, y1, side);
+        }
+    }
+
     public static string Cut(string src, string dst, int size, int lo, int hi, double pad, bool fade) {
         using (Bitmap b = new Bitmap(src)) {
             int W = b.Width, H = b.Height;
@@ -89,6 +143,21 @@ public static class SymbolCutter {
 
 $root = Join-Path $PSScriptRoot '..\..'
 $res = Join-Path $root 'app\src\main\res\drawable-nodpi'
+if ($Kind -eq 'walls') {
+    # Wall button (like the spell buttons) and the wall block on the field: square tiles.
+    $art = Join-Path $root 'art\walls'
+    New-Item -ItemType Directory -Force (Join-Path $art 'sprites') | Out-Null
+    $pngs = @()
+    foreach ($t in @(@('button', 'wall_button', 256, 60, 0.95, 0.17), @('block', 'wall_block', 192, 20, 1.0, 0.12))) {
+        $sprite = (Resolve-Path $art).Path + "\sprites\$($t[0]).png"
+        "{0,-10} {1}" -f $t[0], [SymbolCutter]::Tile((Resolve-Path "$art\originals\$($t[0]).png").Path, $sprite, $t[2], $t[3], $t[4], $t[5])
+        $out = (Resolve-Path $res).Path + "\$($t[1]).png"
+        Copy-Item $sprite $out -Force
+        $pngs += $out
+    }
+    & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files $pngs
+    return
+}
 if ($Kind -eq 'rings') {
     $art = Join-Path $root 'art\rings'; $names = @('glyphs', 'chain', 'seal'); $prefix = 'ring_'
     $size = 256; $pad = 1.02; $fade = $false

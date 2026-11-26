@@ -68,6 +68,17 @@ object Rules {
      */
     fun castTime(base: Float, lane: Int): Float = base + LANE_TIME[lane] - FLIGHT_TIME
 
+    /**
+     * Conjuring walls takes this share of the caster's base cast time: 2.0 s for the player, so it is
+     * always shorter than any spell (the fastest spell takes the base plus lane 5's time).
+     */
+    const val WALL_CAST_SHARE = 0.75f
+
+    fun wallCastTime(base: Float): Float = base * WALL_CAST_SHARE
+
+    /** The chance that a move the bot plans is a wall (in a random column) instead of a shot. */
+    const val BOT_WALL_CHANCE = 0.2f
+
     // Board animation steps, in seconds.
     const val FALL_TIME = 0.22f
     const val POP_TIME = 0.38f

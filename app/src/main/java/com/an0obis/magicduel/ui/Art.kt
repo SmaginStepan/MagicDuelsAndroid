@@ -338,6 +338,18 @@ class Art(private val res: Resources, private val packageName: String) {
         Bitmap.createScaledBitmap(source(Kind.BUTTON, e), size, size, true)
     }
 
+    // Walls (art/walls/PROMPTS.md): the button above each field column, and the block on the field.
+    private val wallButtonSource: Bitmap by lazy { decode(R.drawable.wall_button) }
+    private val wallBlockSource: Bitmap by lazy { decode(R.drawable.wall_block) }
+    private val wallButtons = HashMap<Int, Bitmap>()
+    private val wallBlocks = HashMap<Int, Bitmap>()
+
+    /** The square stone wall button, [size] pixels, with rounded transparent corners. */
+    fun wallButton(size: Int): Bitmap = wallButtons.getOrPut(size) { Bitmap.createScaledBitmap(wallButtonSource, size, size, true) }
+
+    /** A conjured stone wall block for one field cell, [size] pixels, with rounded corners. */
+    fun wallBlock(size: Int): Bitmap = wallBlocks.getOrPut(size) { Bitmap.createScaledBitmap(wallBlockSource, size, size, true) }
+
     /** The soft aura behind a globe in the element's colour: one small bitmap per element, drawn scaled. */
     private fun aura(e: Element): Bitmap = auras.getOrPut(e) {
         val size = 128

@@ -53,6 +53,24 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   Example: 4 globes then 3 globes = 4×5×1 + 3×5×2 = 20 + 30 = 50.
 - Impacts are resolved one at a time; a shot that arrives while the field is moving waits at the edge.
 
+## Walls
+- Five **wall buttons** sit above the field, one over each column. Tapping one casts walls: a short cast
+  (75% of the caster's base cast time, `Rules.WALL_CAST_SHARE`: 2.0 s for you, shorter than any spell)
+  that takes your one casting slot like a spell and can be cancelled the same way. The spell grid isn't
+  touched. While it's cast, the button sits in a glyph ring and the column glows.
+- When the cast completes (as soon as the field is still), a stone wall rises in **every empty cell of
+  that column**. Walls never fall; globes rest on them.
+- A shot that reaches a wall itself **breaks it and takes its cell**, going no further:
+  `· · ▓ G G` + X → `· · X G G`. If there are globes in front of the wall, the wall holds like the field
+  edge and the globes are packed against it: `· G ▓ · ·` + X → `X G ▓ · ·`.
+- If the stretch in front of the wall is already full, the shot can't go anywhere and **bounces back at
+  its caster** (10 damage), for bots too: a wall stops a bot from pushing a full row out at you.
+- An explosion **breaks the walls right beside it in the same row** (left and right, not above or
+  below). Whatever stood on a broken wall then falls.
+- Walls don't count for lines of 3: a wall between two globes breaks the line.
+- Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random column
+  (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3).
+
 ## Menu and tutorial
 - The game opens on a start menu: **Continue** (shows your level and next opponent), **Restart game**
   (asks first, then back to level 1 with the tutorial), and Leaderboard / PvP duel / Options, which
@@ -80,4 +98,4 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 
 ## Not built yet
-Player levelling up / unlocking elements, sound, leaderboard, PvP, options.
+Player levelling up / unlocking elements, leaderboard, PvP.

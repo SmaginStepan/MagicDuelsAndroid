@@ -31,37 +31,111 @@ class Globe(val element: Element, val look: Int = Random.nextInt(LOOKS)) {
     var popping = false
 }
 
-/** The shared 5×5 field. Row 0 is the top lane, column 0 is the player's (left) edge. */
+/**
+ * The shared 5×5 field. Row 0 is the top lane, column 0 is the player's (left) edge.
+ * A cell holds a globe, a wall or nothing. Walls are conjured magic: they never fall, globes rest on
+ * them, and they break when a shot's push reaches them or a globe beside them (same row) explodes.
+ */
 class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
     private val cells = Array(rows) { arrayOfNulls<Globe>(cols) }
+    private val walls = Array(rows) { BooleanArray(cols) }
 
     operator fun get(row: Int, col: Int): Globe? = cells[row][col]
     operator fun set(row: Int, col: Int, globe: Globe?) {
         cells[row][col] = globe
     }
 
-    fun canInsert(row: Int): Boolean = cells[row].any { it == null }
+    fun isWall(row: Int, col: Int): Boolean = walls[row][col]
+
+    fun isEmpty(row: Int, col: Int): Boolean = cells[row][col] == null && !walls[row][col]
+
+    /**
+     * Conjures walls in every empty cell of [col]. Returns those cells (top to bottom); none if the
+     * column is already full.
+     */
+    fun raiseWalls(col: Int): List<Cell> {
+        val raised = ArrayList<Cell>()
+        for (r in 0 until rows) if (isEmpty(r, col)) {
+            walls[r][col] = true
+            raised += Cell(r, col)
+        }
+        return raised
+    }
+
+    fun removeWall(row: Int, col: Int) {
+        walls[row][col] = false
+    }
+
+    /**
+     * Walls right beside exploding globes, in the same row (left and right), which the explosion
+     * breaks. Removes them and returns them.
+     */
+    fun breakWallsBeside(exploding: Collection<Cell>): List<Cell> {
+        val broken = LinkedHashSet<Cell>()
+        for (cell in exploding) for (dc in intArrayOf(-1, 1)) {
+            val c = cell.col + dc
+            if (c in 0 until cols && walls[cell.row][c]) broken += Cell(cell.row, c)
+        }
+        broken.forEach { walls[it.row][it.col] = false }
+        return broken.toList()
+    }
+
+    /** The first wall a shot entering [row] from that edge runs into, or -1 if there is none. */
+    fun firstWall(row: Int, fromLeft: Boolean): Int {
+        val range = if (fromLeft) 0 until cols else (cols - 1 downTo 0)
+        return range.firstOrNull { walls[row][it] } ?: -1
+    }
+
+    /** The cells a shot entering [row] from that edge can move through: up to the far edge or the first wall. */
+    private fun span(row: Int, fromLeft: Boolean): IntRange {
+        val wall = firstWall(row, fromLeft)
+        return when {
+            wall < 0 -> 0 until cols
+            fromLeft -> 0 until wall
+            else -> wall + 1 until cols
+        }
+    }
+
+    /**
+     * True if a shot entering [row] from that edge has somewhere to go: an empty cell before the
+     * first wall, or the wall itself with nothing in front of it (the shot breaks it).
+     */
+    fun canInsert(row: Int, fromLeft: Boolean): Boolean {
+        val span = span(row, fromLeft)
+        val free = span.any { cells[row][it] == null }
+        return free || (firstWall(row, fromLeft) >= 0 && span.none { cells[row][it] != null })
+    }
 
     /**
      * Sends a shot ([globe]) into [row] from the left edge (if [fromLeft]) or the right edge.
-     * It travels as far as it can, pushing every globe ahead of it until they are packed
-     * against the far edge, and freezes right behind them. In an empty row it reaches the far edge.
-     * Returns the column where the shot froze, or -1 (changing nothing) when the row is full.
+     * It travels as far as it can, pushing every globe ahead of it until they are packed against the
+     * far edge, and freezes right behind them. In an empty row it reaches the far edge.
+     * A wall works like the far edge: the globes are packed against it and it holds. Only a shot that
+     * reaches a wall itself (nothing in front of it) breaks it and takes its cell, going no further;
+     * the wall stays in [walls] until the screen has shown the hit, so call [removeWall] then.
+     * Returns the column where the shot froze, or -1 (changing nothing) when it can't enter.
      */
     fun insert(row: Int, fromLeft: Boolean, globe: Globe): Int {
+        if (!canInsert(row, fromLeft)) return -1
         val line = cells[row]
-        val globes = line.filterNotNull()
-        if (globes.size >= cols) return -1
-        line.fill(null)
+        val span = span(row, fromLeft)
+        val globes = span.mapNotNull { line[it] }
+        if (globes.isEmpty() && firstWall(row, fromLeft) >= 0) {
+            val wall = firstWall(row, fromLeft)
+            line[wall] = globe
+            return wall
+        }
+        span.forEach { line[it] = null }
         return if (fromLeft) {
-            val first = cols - globes.size
+            val first = span.last + 1 - globes.size
             globes.forEachIndexed { i, g -> line[first + i] = g }
             line[first - 1] = globe
             first - 1
         } else {
-            globes.forEachIndexed { i, g -> line[i] = g }
-            line[globes.size] = globe
-            globes.size
+            val first = span.first
+            globes.forEachIndexed { i, g -> line[first + i] = g }
+            line[first + globes.size] = globe
+            first + globes.size
         }
     }
 
@@ -86,12 +160,19 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
         }
     }
 
-    /** Lets every globe fall into the empty cells below it. Returns true if anything moved. */
+    /**
+     * Lets every globe fall into the empty cells below it; walls stay put and globes land on them.
+     * Returns true if anything moved.
+     */
     fun applyGravity(): Boolean {
         var moved = false
         for (c in 0 until cols) {
             var target = rows - 1
             for (r in rows - 1 downTo 0) {
+                if (walls[r][c]) {
+                    target = r - 1
+                    continue
+                }
                 val g = cells[r][c] ?: continue
                 if (r != target) {
                     cells[target][c] = g
@@ -163,9 +244,11 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
         for (r in 0 until rows) for (c in 0 until cols) get(r, c)?.let { action(r, c, it) }
     }
 
-    /** Rows as text such as "F.WAE" (used by tests and for debugging). */
+    /** Rows as text such as "F.W#E", # a wall (used by tests and for debugging). */
     fun describe(): List<String> = (0 until rows).map { r ->
-        (0 until cols).joinToString("") { c -> cells[r][c]?.let { code(it.element).toString() } ?: "." }
+        (0 until cols).joinToString("") { c ->
+            cells[r][c]?.let { code(it.element).toString() } ?: if (walls[r][c]) "#" else "."
+        }
     }
 
     companion object {
@@ -178,12 +261,13 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
 
         fun code(e: Element): Char = codes.entries.first { it.value == e }.key
 
-        /** Builds a board from rows of text, e.g. parse(".....", "..F..", ...). */
+        /** Builds a board from rows of text, e.g. parse(".....", "..F#.", ...), # a wall. */
         fun parse(vararg lines: String): Board {
             val board = Board(lines.size, lines[0].length)
             lines.forEachIndexed { r, line ->
                 line.forEachIndexed { c, ch ->
                     codes[ch]?.let { board[r, c] = Globe(it).apply { drawCol = c.toFloat(); drawRow = r.toFloat() } }
+                    if (ch == '#') board.walls[r][c] = true
                 }
             }
             return board

@@ -45,7 +45,7 @@ class BoardTest {
     @Test
     fun fullRowRejectsTheShot() {
         val b = lastRow(".....", ".....", ".....", ".....", "FWEAF")
-        assertFalse(b.canInsert(4))
+        assertFalse(b.canInsert(4, fromLeft = true))
         assertEquals(-1, b.insert(4, fromLeft = true, globe = Globe(Element.WATER)))
         assertEquals("FWEAF", b.describe()[4])
     }
@@ -117,5 +117,81 @@ class BoardTest {
             assertFalse(b.applyGravity())
             assertTrue(b.describe()[4].none { it == '.' })
         }
+    }
+
+    // ---------------------------------------------------------------- walls
+
+    @Test
+    fun aShotThatReachesAWallBreaksItAndTakesItsCell() {
+        val b = lastRow(".....", ".....", ".....", ".....", "..#.E")
+        assertEquals(2, b.firstWall(4, fromLeft = true))
+        assertEquals(2, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
+        assertEquals("..F.E", b.describe()[4])
+        b.removeWall(4, 2)
+        assertFalse(b.isWall(4, 2))
+    }
+
+    @Test
+    fun aWallHoldsWhenTheShotPushesGlobesAgainstIt() {
+        val b = lastRow(".....", ".....", ".....", ".....", ".W#..")
+        assertEquals(0, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
+        assertEquals("FW#..", b.describe()[4])
+    }
+
+    @Test
+    fun globesArePackedAgainstTheWallAndNothingPassesIt() {
+        val b = lastRow(".....", ".....", ".....", ".....", "W..#E")
+        assertEquals(1, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
+        assertEquals(".FW#E", b.describe()[4])
+    }
+
+    @Test
+    fun aFullStretchInFrontOfAWallBlocksTheShot() {
+        val b = lastRow(".....", ".....", ".....", ".....", "WE#..")
+        assertFalse(b.canInsert(4, fromLeft = true))
+        assertEquals(-1, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
+        assertEquals("WE#..", b.describe()[4])
+        // From the other side nothing stands in front of the wall, so the enemy shot breaks it.
+        assertTrue(b.canInsert(4, fromLeft = false))
+        assertEquals(2, b.insert(4, fromLeft = false, globe = Globe(Element.AIR)))
+        assertEquals("WEA..", b.describe()[4])
+    }
+
+    @Test
+    fun aWallRightAtTheEntryEdgeIsBrokenAtOnce() {
+        val b = lastRow(".....", ".....", ".....", ".....", "#WE..")
+        assertEquals(0, b.insert(4, fromLeft = true, globe = Globe(Element.FIRE)))
+        assertEquals("FWE..", b.describe()[4])
+    }
+
+    @Test
+    fun wallsStayPutAndGlobesRestOnThem() {
+        val b = Board.parse("W....", ".....", "#....", ".....", "E....")
+        assertTrue(b.applyGravity())
+        assertEquals(listOf(".....", "W....", "#....", ".....", "E...."), b.describe())
+        assertFalse(b.applyGravity())
+    }
+
+    @Test
+    fun wallsRiseInEveryEmptyCellOfTheColumn() {
+        val b = Board.parse(".....", ".....", ".....", ".F...", ".W...")
+        assertEquals(listOf(Cell(0, 1), Cell(1, 1), Cell(2, 1)), b.raiseWalls(1))
+        assertEquals(listOf(".#...", ".#...", ".#...", ".F...", ".W..."), b.describe())
+        assertTrue(b.raiseWalls(1).isEmpty())
+    }
+
+    @Test
+    fun anExplosionBreaksTheWallsBesideItInItsRowOnly() {
+        val b = Board.parse(".....", ".....", ".....", ".#...", "#FFF#")
+        val exploding = listOf(Cell(4, 1), Cell(4, 2), Cell(4, 3))
+        assertEquals(setOf(Cell(4, 0), Cell(4, 4)), b.breakWallsBeside(exploding).toSet())
+        assertTrue(b.isWall(3, 1))
+        assertEquals(".FFF.", b.describe()[4])
+    }
+
+    @Test
+    fun wallsBreakLinesOfEqualGlobes() {
+        val b = Board.parse(".....", ".....", ".....", ".....", "FF#FF")
+        assertTrue(b.findMatches().isEmpty())
     }
 }
