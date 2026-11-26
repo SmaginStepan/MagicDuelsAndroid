@@ -68,6 +68,9 @@ object Rules {
      */
     fun castTime(base: Float, lane: Int): Float = base + LANE_TIME[lane] - FLIGHT_TIME
 
+    /** The caster's quickest spell cast (into the bottom lane); avatars play their cast clips at this length. */
+    fun shortestCastTime(base: Float): Float = LANE_TIME.indices.minOf { castTime(base, it) }
+
     /**
      * Conjuring walls takes this many times as long as the caster's slowest spell (into lane 1):
      * 1.25 × 9.45 s ≈ 11.8 s for the player, clearly longer than any spell cast.

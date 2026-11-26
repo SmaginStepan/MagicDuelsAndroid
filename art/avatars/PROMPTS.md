@@ -62,8 +62,9 @@ was ddeff857-…, 7b7a6b07-…, 0963cf2a-… (mage), 513884a8-…, f268fb56-…,
   writes `res/drawable-nodpi/avatar_<name>.webp` (idle: cast1's first frame) and
   `avatar_<name>_cast1..3.webp` (8×6 sheets of 232×300 frames).
 - In the game (`Avatars.kt`, `GameView.drawPlayerAvatar`): each cast plays one of the three at random,
-  stretched over the whole cast (its speed matched to the cast's length, so the avatar moves from the tap
-  until it throws as the shot leaves); neighbouring frames are blended, and afterwards the last pose
+  always lasting as long as your quickest cast (lane 5, about 4.4 s) and ending with the throw as the shot
+  leaves; in a longer cast the avatar stands still until the clip starts (bots: their quickest cast, at
+  most 4 s). Neighbouring frames are blended, and afterwards the last pose
   fades back into the idle one over 0.4 s. Only the playing sheet is kept in memory.
   Crystal positions (`tipX`, `tipY`) were measured from the idle frames.
 

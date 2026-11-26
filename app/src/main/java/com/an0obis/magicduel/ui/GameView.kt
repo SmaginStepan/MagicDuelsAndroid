@@ -1075,9 +1075,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * A bot's Midjourney avatar, facing left: like yours, its cast animation plays over the whole cast
-     * and settles back into the idle pose; hits flash it white and shake it. When you win it sinks
-     * into its defeated pose (the last frame of its collapse, so the same figure in the same place).
+     * A bot's Midjourney avatar, facing left. Like yours, its cast animation lasts as long as its
+     * quickest cast (but at most BOT_CAST_ANIM_MAX, so it never crawls) and ends as the shot leaves;
+     * afterwards it settles back into the idle pose. Hits flash it white and shake it. When you win it sinks into its defeated pose (the
+     * last frame of its collapse, so the same figure in the same place).
      */
     private fun drawEnemySprite(c: Canvas, a: EnemyAvatar, x: Float, castColor: Int?, cast: Float) {
         val e = battle.enemy
@@ -1096,7 +1097,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val anim = if (e.isCasting && battle.winner == null) art.sheetIfReady(a.castRes) else null
         var clipT = 0f
         if (anim != null) {
-            clipT = e.castProgress
+            // Like yours, the clip lasts as long as the bot's quickest cast (but at most BOT_CAST_ANIM_MAX:
+            // bots cast slowly) and ends as the shot leaves; until it starts the bot stands still.
+            clipT = castClipT(e, min(Rules.shortestCastTime(e.baseCastTime), BOT_CAST_ANIM_MAX))
             enemyLastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
             enemyLastCastAnim = anim
             enemyCastEndedAt = -1f
@@ -1133,6 +1136,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.drawCircle(tx, ty, r, fill)
             fill.shader = null
         }
+    }
+
+    /**
+     * How far (0 to 1) [caster]'s cast clip is, for a clip [length] seconds long that ends as the cast
+     * completes: 0 until the last [length] seconds of a longer cast (the avatar stands still).
+     */
+    private fun castClipT(caster: Caster, length: Float): Float {
+        val remaining = (1f - caster.castProgress) * caster.castTime
+        return (1f - remaining / length).coerceIn(0f, 1f)
     }
 
     /**
@@ -2079,8 +2091,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /**
      * Your avatar (Midjourney sprite). While you cast, one of its three cast animations (48 frames)
-     * plays over the whole cast, its speed matched to the cast's length, so the figure is back in its
-     * pose as the shot leaves. Neighbouring frames are blended so the motion stays smooth. Behind it,
+     * plays, always as long as your quickest cast (into lane 5) and ending with the throw as the shot
+     * leaves; in a longer cast the figure stands still until the clip starts. Neighbouring frames are
+     * blended so the motion stays smooth. Behind it,
      * a soft light in its crystal's colour (the spell's colour while casting) keeps the dark figure
      * readable; the crystal glows with the spell. Hits flash it white and shake it; on defeat it
      * plays its collapse animation and stays in the defeated pose.
@@ -2110,15 +2123,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         fill.shader = null
         avatarPaint.alpha = (255 * (1f - 0.6f * k)).toInt()
         avatarPaint.colorFilter = if (flash[0] > 0.01f) PorterDuffColorFilter(withAlpha(WHITE, (170 * flash[0]).toInt()), PorterDuff.Mode.SRC_ATOP) else null
-        // The cast clip lasts the whole cast: its speed adapts to the cast's length, so the avatar is
-        // moving from the tap until it throws its magic as the shot leaves.
+        // The cast clip always lasts as long as your quickest cast and ends with the throw as the shot
+        // leaves; in a longer cast the avatar stands still until the clip starts.
         val anim = if (p.isCasting && !lost) art.avatarCast(avatar, castAnim) else null
         var clipT = 0f
         if (defeat != null) {
             drawClip(c, defeat, endTimer / DEFEAT_ANIM_TIME, frame, avatarPaint)
             lastCastAnim = null
         } else if (anim != null) {
-            clipT = p.castProgress
+            clipT = castClipT(p, Rules.shortestCastTime(p.baseCastTime))
             lastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
             lastCastAnim = anim
             castEndedAt = -1f
@@ -2428,6 +2441,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** A bot sprite's height, as a multiple of [enemyH]. */
         const val ENEMY_AVATAR_SCALE = 1.05f
+
+        /** The longest a bot's cast animation plays, in seconds (its slow casts start with it standing still). */
+        const val BOT_CAST_ANIM_MAX = 4f
 
         /** Height of the defeated pose on the end card, in layout units. */
         const val END_IMAGE_H = 2.1f
