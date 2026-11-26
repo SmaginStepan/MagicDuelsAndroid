@@ -206,6 +206,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var tappedRow = -1
     private var tappedCol = -1
 
+    /** The glyph ring style of each side's current cast; every new cast takes the next style. */
+    private val ringStyle = IntArray(2) { it }
+
     /** Time since the training dummy was last hit (its hit animation is playing), or -1. */
     private var dummyHitT = -1f
 
@@ -460,7 +463,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         when (e) {
             // Tapping a spell: a plain, quiet button click (the bot taps nothing, so it is silent).
-            is BattleEvent.CastStarted -> if (e.side == Side.PLAYER) sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+            is BattleEvent.CastStarted -> {
+                if (e.side == Side.PLAYER) sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                ringStyle[e.side.ordinal] = (ringStyle[e.side.ordinal] + 1) % Art.CAST_RING_STYLES
+            }
             is BattleEvent.CastCancelled -> {
                 sounds.play(Sounds.Fx.UI_BACK, 0.8f)
                 // The dissolved spells pop back in; the staff lowers without a shot.
@@ -803,6 +809,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val col = art.color(shot.element)
             rect.set(cx, chipsTop, cx + chip, chipsTop + chip)
             val fadeIn = if (i == battle.botQueue.lastIndex) 1f - queueShift else 1f
+            // The spell being cast sits in its glyph ring (behind the chips, so the next one covers its edge).
+            if (next && battle.enemy.isCasting) {
+                art.drawCastRing(
+                    c, ringStyle[Side.ENEMY.ordinal], rect.centerX(), rect.centerY(), chip * CAST_RING_SIZE,
+                    col, battle.enemy.castProgress, clock,
+                )
+            }
             bitmapPaint.alpha = ((if (next) 255 else 170) * fadeIn).toInt()
             c.drawBitmap(art.button(shot.element, chip.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
             bitmapPaint.alpha = 255
@@ -812,12 +825,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 c.drawRoundRect(rect, rr, rr, stroke)
             }
             label(c, "${shot.lane + 1}", cx + chip - 0.1f * u, chipsTop + chip - 0.08f * u, 0.26f * u, WHITE, Paint.Align.RIGHT, fadeIn)
-            if (next && battle.enemy.isCasting) {
-                rect.set(cx - 0.06f * u, chipsTop - 0.06f * u, cx + chip + 0.06f * u, chipsTop + chip + 0.06f * u)
-                stroke.color = WHITE
-                stroke.strokeWidth = 0.05f * u
-                c.drawArc(rect, -90f, 360f * battle.enemy.castProgress, false, stroke)
-            }
         }
     }
 
@@ -1469,12 +1476,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val x0 = gridLeft + tappedCol * (tile + tileGap)
             val y0 = gridTop + tappedRow * (tile + tileGap)
             rect.set(x0 + 0.08f * u, y0 + 0.08f * u, x0 + tile - 0.08f * u, y0 + tile - 0.08f * u)
+            art.drawCastRing(
+                c, ringStyle[Side.PLAYER.ordinal], rect.centerX(), rect.centerY(), tile * CAST_RING_SIZE,
+                art.color(element), caster.castProgress, clock,
+            )
             bitmapPaint.alpha = 230
             c.drawBitmap(art.button(element, tile.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
             bitmapPaint.alpha = 255
-            stroke.color = art.color(element)
-            stroke.strokeWidth = 0.08f * u
-            c.drawArc(rect, -90f, 360f * caster.castProgress, false, stroke)
         }
     }
 
@@ -1600,6 +1608,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** Volume of the main menu buttons' click (Options buttons use 0.8). */
         const val MENU_CLICK_VOLUME = 0.3f
+
+        /** The glyph ring around a spell being cast, as a multiple of its button's size. */
+        const val CAST_RING_SIZE = 1.45f
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f

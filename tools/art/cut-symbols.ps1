@@ -1,12 +1,15 @@
-# Cuts the element symbols (glowing emblems on black, see art/symbols/PROMPTS.md) into transparent
-# square sprites for the spell grid, where the new spells grow during a cast.
+# Cuts glowing Midjourney art on black into transparent square sprites:
 #
-#   cut-symbols.ps1                  art/symbols/originals/*.png -> res/drawable-nodpi/sym_*.webp
+#   cut-symbols.ps1                  element symbols: art/symbols/originals -> res/drawable-nodpi/sym_*.webp
+#                                    (the new spells growing in the spell grid, see art/symbols/PROMPTS.md)
+#   cut-symbols.ps1 -Kind rings      cast rings: art/rings/originals -> res/drawable-nodpi/ring_*.webp
+#                                    (glyph rings around a spell being cast, see art/rings/PROMPTS.md)
 #
 # Alpha comes from brightness (ramp Lo..Hi) and the colour is un-multiplied, so drawing a sprite over
-# black gives back the original. The crop is a square around the visible part, centred on it, and
-# its outer ring fades out so faint background haze never shows as a box.
-param([int]$Size = 192, [int]$Lo = 24, [int]$Hi = 90)
+# black gives back the original. The crop is a square around the visible part, centred on it. Symbols
+# get some margin and their outer ring fades out, so faint background haze never shows as a box;
+# rings are cropped tight, their outer edge on the sprite's edge.
+param([ValidateSet('symbols', 'rings')][string]$Kind = 'symbols', [int]$Lo = 24, [int]$Hi = 90)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -17,7 +20,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 public static class SymbolCutter {
-    public static string Cut(string src, string dst, int size, int lo, int hi) {
+    public static string Cut(string src, string dst, int size, int lo, int hi, double pad, bool fade) {
         using (Bitmap b = new Bitmap(src)) {
             int W = b.Width, H = b.Height;
             BitmapData d = b.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -44,8 +47,8 @@ public static class SymbolCutter {
             int x1 = W - 1; while (x1 > 0 && cols[x1] < need) x1--;
             int y0 = 0; while (y0 < H - 1 && rows[y0] < need) y0++;
             int y1 = H - 1; while (y1 > 0 && rows[y1] < need) y1--;
-            // The visible box's diagonal fits inside the faded circle below.
-            int side = (int)(Math.Max(x1 - x0, y1 - y0) * 1.25);
+            // With fade, pad 1.25 makes the visible box's diagonal fit inside the faded circle below.
+            int side = (int)(Math.Max(x1 - x0, y1 - y0) * pad);
             int cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
             Rectangle crop = new Rectangle(cx - side / 2, cy - side / 2, side, side);
             using (Bitmap keyed = new Bitmap(W, H, PixelFormat.Format32bppArgb)) {
@@ -60,6 +63,7 @@ public static class SymbolCutter {
                     g.Clear(Color.Transparent);
                     // Outside the image counts as transparent black.
                     g.DrawImage(keyed, new Rectangle(0, 0, size, size), crop.X, crop.Y, crop.Width, crop.Height, GraphicsUnit.Pixel);
+                    if (!fade) { o.Save(dst, ImageFormat.Png); return String.Format("visible=({0},{1})-({2},{3}) side={4}", x0, y0, x1, y1, side); }
                     // Fade the outer ring to nothing, so faint background haze can never show as a box.
                     BitmapData od = o.LockBits(new Rectangle(0, 0, size, size), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
                     byte[] op = new byte[od.Stride * size];
@@ -84,14 +88,20 @@ public static class SymbolCutter {
 "@
 
 $root = Join-Path $PSScriptRoot '..\..'
-$art = Join-Path $root 'art\symbols'
 $res = Join-Path $root 'app\src\main\res\drawable-nodpi'
+if ($Kind -eq 'rings') {
+    $art = Join-Path $root 'art\rings'; $names = @('glyphs', 'chain', 'seal'); $prefix = 'ring_'
+    $size = 256; $pad = 1.02; $fade = $false
+} else {
+    $art = Join-Path $root 'art\symbols'; $names = @('fire', 'water', 'earth', 'air', 'lightning', 'shadow'); $prefix = 'sym_'
+    $size = 192; $pad = 1.25; $fade = $true
+}
 New-Item -ItemType Directory -Force (Join-Path $art 'sprites') | Out-Null
 $pngs = @()
-foreach ($n in @('fire', 'water', 'earth', 'air', 'lightning', 'shadow')) {
+foreach ($n in $names) {
     $sprite = (Resolve-Path $art).Path + "\sprites\$n.png"
-    "{0,-10} {1}" -f $n, [SymbolCutter]::Cut((Resolve-Path "$art\originals\$n.png").Path, $sprite, $Size, $Lo, $Hi)
-    $out = (Resolve-Path $res).Path + "\sym_$n.png"
+    "{0,-10} {1}" -f $n, [SymbolCutter]::Cut((Resolve-Path "$art\originals\$n.png").Path, $sprite, $size, $Lo, $Hi, $pad, $fade)
+    $out = (Resolve-Path $res).Path + "\$prefix$n.png"
     Copy-Item $sprite $out -Force
     $pngs += $out
 }

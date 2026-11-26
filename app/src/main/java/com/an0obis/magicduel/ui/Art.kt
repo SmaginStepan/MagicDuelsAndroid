@@ -43,6 +43,10 @@ class Art(private val res: Resources, private val packageName: String) {
         const val FREEZE_GLOBE = 0.42f
         const val DUMMY_HIT_COLS = 4
         const val DUMMY_HIT_FRAMES = 16
+
+        /** Glyph ring styles around a spell being cast, see [drawCastRing]. */
+        const val CAST_RING_STYLES = 3
+        private val RING_IDS = intArrayOf(R.drawable.ring_glyphs, R.drawable.ring_chain, R.drawable.ring_seal)
     }
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -75,6 +79,77 @@ class Art(private val res: Resources, private val packageName: String) {
     }
 
     private val symbolDst = RectF()
+
+    // ---------------------------------------------------------------- cast rings
+
+    /**
+     * Draws the glyph ring around a spell being cast (ring_*, white Midjourney art tinted with
+     * [color], see art/rings/PROMPTS.md), centred on (cx, cy) and [size] pixels across. The whole
+     * ring shows dimly; a bright part sweeps clockwise from the top as [progress] goes 0..1, with a
+     * spark at its leading edge. [style] (0 until [CAST_RING_STYLES]) picks the ring and how it moves:
+     * 0 glyphs: stands still and breathes; 1 chain: the runes stream round through the lit part;
+     * 2 seal: turns and closes in as it fills. [time] is any running clock in seconds.
+     */
+    fun drawCastRing(c: Canvas, style: Int, cx: Float, cy: Float, size: Float, color: Int, progress: Float, time: Float) {
+        val s = Math.floorMod(style, CAST_RING_STYLES)
+        val bmp = rings[s] ?: decode(RING_IDS[s]).also { rings[s] = it }
+        val tint = mix(color, WHITE, 0.3f)
+        if (tint != ringTint) {
+            ringTint = tint
+            ringPaint.colorFilter = PorterDuffColorFilter(tint, PorterDuff.Mode.MULTIPLY)
+        }
+        val p = progress.coerceIn(0f, 1f)
+        val rot: Float
+        val scale: Float
+        val dim: Int
+        val lit: Int
+        when (s) {
+            0 -> { rot = 0f; scale = 1f; dim = 100; lit = (215 + 40 * sin(time * 7f)).toInt() }
+            1 -> { rot = -time * 45f; scale = 1f; dim = 95; lit = 255 }
+            else -> { rot = time * 25f; scale = 1.2f - 0.2f * easeOut(p); dim = (75 + 90 * p).toInt(); lit = 255 }
+        }
+        val half = size * scale / 2f
+        ringDst.set(cx - half, cy - half, cx + half, cy + half)
+        c.save()
+        c.rotate(rot, cx, cy)
+        ringPaint.alpha = dim
+        c.drawBitmap(bmp, null, ringDst, ringPaint)
+        c.restore()
+        if (p <= 0f) return
+        // The lit part: the ring again, clipped to a pie slice from the top.
+        val reach = half * 1.2f
+        ringOval.set(cx - reach, cy - reach, cx + reach, cy + reach)
+        ringClip.reset()
+        ringClip.moveTo(cx, cy)
+        ringClip.arcTo(ringOval, -90f, 360f * p, false)
+        ringClip.close()
+        c.save()
+        c.clipPath(ringClip)
+        c.rotate(rot, cx, cy)
+        ringPaint.alpha = lit
+        c.drawBitmap(bmp, null, ringDst, ringPaint)
+        c.restore()
+        // A spark where the light is spreading.
+        if (p < 1f) {
+            val a = (-90f + 360f * p) * (PI / 180f).toFloat()
+            val r = half * 0.9f
+            val sx = cx + r * cos(a)
+            val sy = cy + r * sin(a)
+            fill.color = withAlpha(color, 110)
+            c.drawCircle(sx, sy, size * 0.07f, fill)
+            fill.color = withAlpha(tint, 230)
+            c.drawCircle(sx, sy, size * 0.035f, fill)
+            fill.color = WHITE
+            c.drawCircle(sx, sy, size * 0.016f, fill)
+        }
+    }
+
+    private val rings = arrayOfNulls<Bitmap>(CAST_RING_STYLES)
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private var ringTint = 0
+    private val ringDst = RectF()
+    private val ringOval = RectF()
+    private val ringClip = Path()
 
     // ---------------------------------------------------------------- Midjourney sprites
     // res/drawable-nodpi: orb_* (globes), proj_* (flying projectiles, head on the right),
