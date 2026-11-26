@@ -271,11 +271,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dashed.pathEffect = DashPathEffect(floatArrayOf(0.12f * u, 0.14f * u), 0f)
         sky.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), Pal.SKY_TOP, Pal.SKY_BOTTOM, Shader.TileMode.CLAMP)
         text.setShadowLayer(0.08f * u, 0f, 0.03f * u, BLACK)
-        // Cut out the animation frames at the duel's sizes in the background (see Art.preload).
-        art.preload(
-            Element.entries, (0.9f * fu).toInt().coerceAtLeast(8), (SHOT_HEIGHT * fu).toInt().coerceAtLeast(8), freezeHeight(),
-            listOf(hitSize(Side.PLAYER), hitSize(Side.ENEMY)),
-        )
+        // Decode the animation sheets of the elements in play in the background (see Art.preload);
+        // as GPU-only bitmaps when this view draws with hardware acceleration.
+        art.hardwareBitmaps = isHardwareAccelerated
+        art.preload(battle.elements)
     }
 
     private fun resetEffects() {
@@ -299,6 +298,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** A fresh duel at the current level; level 1 runs the tutorial until it has been beaten once. */
     private fun startBattle() {
         battle = Battle(Opponents.forLevel(level))
+        art.preload(battle.elements)
         tutorial = if (level == 0 && !tutorialDone) Tutorial() else null
         resetEffects()
     }
@@ -431,7 +431,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 lastCastColor[e.side.ordinal] = art.color(e.element)
             }
             // Elements with a freeze clip show the shot freezing (drawFreeze); the others get a frost ring.
-            is BattleEvent.Landed -> if (art.freezeFrames(e.element, freezeHeight()) == null) rings += Ring(
+            is BattleEvent.Landed -> if (art.freeze(e.element) == null) rings += Ring(
                 cellX(e.col.toFloat()), cellY(e.row.toFloat()),
                 mix(art.color(e.element), WHITE, 0.65f), 0.25f * fu, 0.8f * fu, 0.35f,
             )
@@ -497,7 +497,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * a lightning strike) plays over the mage, randomly turned and mirrored so repeated hits differ.
      */
     private fun hitBurst(side: Side, element: Element) {
-        if (art.hitFrames(element, hitSize(side)) == null) return
+        if (art.hit(element) == null) return
         bursts += HitBurst(side, element, Random.nextBoolean(), Random.nextFloat() * 50f - 25f)
     }
 
@@ -513,9 +513,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun drawHitBursts(c: Canvas) {
         for (b in bursts) {
             val size = hitSize(b.side)
-            val frames = art.hitFrames(b.element, size) ?: continue
+            val anim = art.hit(b.element) ?: continue
             val k = (b.t / HIT_TIME).coerceIn(0f, 1f)
-            val bmp = frames[min(frames.size - 1, (k * frames.size).toInt())]
             val at = chest(b.side)
             val grow = (0.55f + 0.45f * easeOut(min(1f, k / 0.1f))) * (1f + 0.3f * k)
             c.save()
@@ -524,7 +523,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.scale(if (b.flip) -grow else grow, grow)
             rect.set(-size / 2f, -size / 2f, size / 2f, size / 2f)
             bitmapPaint.alpha = (255 * (1f - smooth01((k - 0.67f) / 0.33f))).toInt()
-            c.drawBitmap(bmp, null, rect, bitmapPaint)
+            anim.draw(c, min(anim.count - 1, (k * anim.count).toInt()), rect, bitmapPaint)
             c.restore()
         }
         bitmapPaint.alpha = 255
@@ -843,7 +842,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             }
             var scale = 1f
             var alpha = 1f
-            val hasFreeze = g.freeze > 0f && art.freezeFrames(g.element, freezeHeight()) != null
+            val hasFreeze = g.freeze > 0f && art.freeze(g.element) != null
             if (g.popping && popping) {
                 val p = battle.phaseProgress
                 scale = 1f + 0.45f * p
@@ -859,7 +858,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val half = size * scale / 2f
             rect.set(x - half, y - half, x + half, y + half)
             bitmapPaint.alpha = (255 * alpha).toInt()
-            if (alpha > 0f) c.drawBitmap(art.globe(g.element, size, animFrame(g.look), g.look), null, rect, bitmapPaint)
+            if (alpha > 0f) art.drawGlobe(c, g.element, rect, animFrame(g.look), g.look, bitmapPaint)
             if (g.freeze > 0f && !hasFreeze) {
                 // No freeze animation for this element: a white flash fades off the new globe.
                 fill.color = withAlpha(0xFFE8F6FF.toInt(), (190 * g.freeze).toInt())
@@ -882,11 +881,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * (tools/art/anim-sheets.ps1); at first the live comet is drawn over it and fades out.
      */
     private fun drawFreeze(c: Canvas, g: Globe) {
-        val frames = art.freezeFrames(g.element, freezeHeight()) ?: return
+        val anim = art.freeze(g.element) ?: return
         val t = 1f - g.freeze
-        val bmp = frames[min(frames.size - 1, (t * frames.size).toInt())]
-        val h = bmp.height.toFloat()
-        val w = bmp.width.toFloat()
+        val h = freezeHeight().toFloat()
+        val w = h * anim.aspect
         val x = cellX(g.drawCol)
         val y = cellY(g.drawRow)
         c.save()
@@ -895,7 +893,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (!g.headingRight) c.scale(-1f, 1f)
         rect.set(h / 2f - w, -h / 2f, h / 2f, h / 2f)
         bitmapPaint.alpha = (255 * smooth01(t / 0.15f) * (1f - smooth01((t - 0.8f) / 0.2f))).toInt()
-        c.drawBitmap(bmp, null, rect, bitmapPaint)
+        anim.draw(c, min(anim.count - 1, (t * anim.count).toInt()), rect, bitmapPaint)
         c.restore()
         // The live comet keeps moving at first and fades out as the frost takes over (the clip starts
         // at the flying comet's head size, see tools/art/anim-sheets.ps1).
@@ -920,9 +918,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * whose head is locked in place, so the head moves exactly as the caller moves it.
      */
     private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, look: Int, alpha: Float = 1f) {
-        val bmp = art.projectile(e, (SHOT_HEIGHT * fu).toInt().coerceAtLeast(8), animFrame(look, COMET_FPS), look)
-        val h = bmp.height.toFloat()
-        val w = bmp.width.toFloat()
+        val anim = art.projectile(e, look)
+        val h = SHOT_HEIGHT * fu
+        val w = h * anim.aspect
         // The head's centre sits SHOT_HEAD_INSET image heights in from the right edge (room for spray ahead).
         val headInset = h * SHOT_HEAD_INSET
         c.save()
@@ -936,7 +934,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         if (degrees != 0f) c.rotate(degrees)
         rect.set(headInset - w, -h / 2f, headInset, h / 2f)
         bitmapPaint.alpha = (255 * alpha.coerceIn(0f, 1f)).toInt()
-        c.drawBitmap(bmp, null, rect, bitmapPaint)
+        anim.draw(c, animFrame(look, COMET_FPS), rect, bitmapPaint)
         bitmapPaint.alpha = 255
         c.restore()
     }
@@ -1006,7 +1004,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val y = laneY + (target.y - laneY) * t
                     val half = (0.9f * fu).toInt().coerceAtLeast(8) / 2f
                     rect.set(x - half, y - half, x + half, y + half)
-                    c.drawBitmap(art.globe(p.element, (2 * half).toInt(), animFrame(p.look), p.look), null, rect, bitmapPaint)
+                    art.drawGlobe(c, p.element, rect, animFrame(p.look), p.look, bitmapPaint)
                 }
                 Projectile.State.DONE -> Unit
             }
@@ -1168,7 +1166,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         for (e in elements) {
             val bob = sin(clock * 2f + e.ordinal) * 0.07f * u
             rect.set(gx, gy + bob, gx + gs, gy + gs + bob)
-            c.drawBitmap(art.globe(e, gs, animFrame(e.ordinal * 5)), null, rect, bitmapPaint)
+            art.drawGlobe(c, e, rect, animFrame(e.ordinal * 5), 0, bitmapPaint)
             gx += gs + gap
         }
 

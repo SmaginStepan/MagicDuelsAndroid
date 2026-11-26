@@ -222,7 +222,15 @@ now also uses the ping-pong of its steady first 1.8 s, like shadow.
 - `cut-orbs.ps1` — globe originals → round sprites + preview.
 - `resize-orbs.ps1` — sprites → 256 px game copies.
 - `cut-fx.ps1` — projectile and button originals → sprites, game copies and preview.
-- `anim-sheets.ps1` — animation frames → sprite sheets for the game.
+- `anim-sheets.ps1` — animation frames → sprite sheets for the game (`-Out *.webp` writes WebP).
+- `to-webp.ps1` — PNGs in `res/drawable-nodpi` → lossy WebP (quality 92, alpha kept), PNGs deleted.
+  Needs Google's `cwebp.exe` in `tools/art/bin` (not in git; from libwebp-…-windows-x64.zip on
+  storage.googleapis.com/downloads.webmproject.org/releases/webp/).
+
+All game images are WebP (2026-11-26): 42.9 MB of PNG became 11.6 MB, the APK 46 → 12.6 MB. In the
+game each animation is one decoded sheet (GPU-only hardware bitmap) and frames are drawn straight from
+it (`Art.Anim`); only the elements in play are loaded. Measured on the phone in a duel: 387 MB total
+(250 MB of copied frames) before, 177 MB after.
 
 ## Hit bursts (Midjourney, 2026-11-26)
 

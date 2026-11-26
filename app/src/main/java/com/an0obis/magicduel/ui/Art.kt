@@ -184,53 +184,77 @@ class Art(private val res: Resources, private val packageName: String) {
     }
 
     /**
-     * A crystal globe with the element sealed inside, [size] pixels square. If the element has
-     * animation sheets, [look] picks one of its variants and [frame] the animation frame (any
-     * number; it wraps around).
+     * Draws a crystal globe with the element sealed inside into [dst] (square), with [paint] (its
+     * alpha fades the whole globe): a soft aura in the element's colour and the globe at 88% of the
+     * size. If the element has animation sheets, [look] picks one of its variants and [frame] the
+     * animation frame (any number; it wraps around); otherwise the still image is drawn.
      */
-    fun globe(e: Element, size: Int, frame: Int = 0, look: Int = 0): Bitmap {
-        animFrames(Kind.GLOBE, e, variant(Kind.GLOBE, e, look), size)?.let { return it[Math.floorMod(frame, it.size)] }
-        return scaled.getOrPut(Triple(Kind.GLOBE, e, size)) { renderGlobe(e, size) }
+    fun drawGlobe(c: Canvas, e: Element, dst: RectF, frame: Int, look: Int, paint: Paint) {
+        c.drawBitmap(aura(e), null, dst, paint)
+        val inset = dst.width() * 0.06f
+        inner.set(dst.left + inset, dst.top + inset, dst.right - inset, dst.bottom - inset)
+        val a = anim(Kind.GLOBE, e, variant(Kind.GLOBE, e, look))
+        if (a != null) a.draw(c, frame, inner, paint) else c.drawBitmap(source(Kind.GLOBE, e), null, inner, paint)
     }
 
     /**
-     * The flying projectile for [e], head on the right, [height] pixels tall (width follows the image).
-     * If the element has animation sheets, [look] picks a variant and [frame] the animation frame.
+     * The flying projectile for [e], head on the right; [look] picks an animation variant. Elements
+     * without animation sheets get their still image as a one-frame animation.
      */
-    fun projectile(e: Element, height: Int, frame: Int = 0, look: Int = 0): Bitmap {
-        animFrames(Kind.PROJECTILE, e, variant(Kind.PROJECTILE, e, look), height)?.let { return it[Math.floorMod(frame, it.size)] }
-        return scaled.getOrPut(Triple(Kind.PROJECTILE, e, height)) {
-            val src = source(Kind.PROJECTILE, e)
-            Bitmap.createScaledBitmap(src, max(1, height * src.width / src.height), height, true)
-        }
-    }
+    fun projectile(e: Element, look: Int): Anim =
+        anim(Kind.PROJECTILE, e, variant(Kind.PROJECTILE, e, look)) ?: stills.getOrPut(e) { Anim(source(Kind.PROJECTILE, e), 1, 1) }
 
     /**
-     * The landed shot freezing into a globe: [FREEZE_COLS] × [FREEZE_ROWS] frames, [height] pixels
-     * tall and [FREEZE_ASPECT] times as wide. The comet's head (and the globe it becomes) is centred
-     * half a frame height in from the right edge, the globe [FREEZE_GLOBE] of the height across.
-     * Null if the element has no freeze sheet.
+     * The landed shot freezing into a globe: [FREEZE_COLS] × [FREEZE_ROWS] frames, [FREEZE_ASPECT]
+     * times as wide as tall. The comet's head (and the globe it becomes) is centred half a frame
+     * height in from the right edge, the globe [FREEZE_GLOBE] of the height across. Null if the
+     * element has no freeze sheet.
      */
-    fun freezeFrames(e: Element, height: Int): Array<Bitmap>? = animFrames(Kind.FREEZE, e, 0, height)
+    fun freeze(e: Element): Anim? = anim(Kind.FREEZE, e, 0)
 
     /**
      * The burst where magic of [e] hits a duellist: 16 square frames (4×4 sheet `hit_<element>`),
-     * [size] pixels, the burst at its peak in the first frame and gone in the last. Null if the
-     * element has no hit sheet.
+     * the burst at its peak in the first frame and gone in the last. Null if the element has no
+     * hit sheet.
      */
-    fun hitFrames(e: Element, size: Int): Array<Bitmap>? = animFrames(Kind.HIT, e, 0, size)
+    fun hit(e: Element): Anim? = anim(Kind.HIT, e, 0)
+
+    /**
+     * The frames of one animation: regions of one decoded sheet, drawn scaled straight from it
+     * (nothing is copied per frame or per size).
+     */
+    class Anim(val sheet: Bitmap, cols: Int, rows: Int) {
+        val count = cols * rows
+        private val fw = sheet.width / cols
+        private val fh = sheet.height / rows
+
+        /** Width of a frame divided by its height. */
+        val aspect = fw.toFloat() / fh
+        private val rects = Array(count) { k -> Rect((k % cols) * fw, (k / cols) * fh, (k % cols + 1) * fw, (k / cols + 1) * fh) }
+
+        /** Draws frame [k] (any number; it wraps around) into [dst]. */
+        fun draw(c: Canvas, k: Int, dst: RectF, paint: Paint) = c.drawBitmap(sheet, rects[Math.floorMod(k, count)], dst, paint)
+    }
 
     // ---------------------------------------------------------------- Midjourney animations
     // Optional sheets, see art/ANIMATIONS.md:
     // - orb_<element>_anim, _anim2 … and proj_<element>_anim, _anim2 …: variants of a Midjourney
     //   "Loop" video, 24 frames in a 6×4 grid. Each globe and shot shows one variant, picked by its
     //   look number. Elements without a sheet simply use the still image.
-    // - freeze_<element>: a shot freezing into a crystal globe, 16 frames in a 4×4 grid.
-    // A sheet is only decoded to cut out frames at the size they are drawn; then it is let go.
+    // - freeze_<element> and hit_<element>: 16 frames in a 4×4 grid.
+    // Each sheet is decoded once, only when an element in play needs it, and kept whole; frames are
+    // drawn from it. With [hardwareBitmaps] sheets live only in GPU memory.
+
+    /** Decode sheets as hardware bitmaps (GPU memory only); needs a hardware-accelerated canvas. */
+    @Volatile
+    var hardwareBitmaps = false
 
     private val variantCounts = ConcurrentHashMap<Pair<Kind, Element>, Int>()
-    private val animCache = ConcurrentHashMap<String, Array<Bitmap>>()
-    private val noAnim = ConcurrentHashMap<String, Boolean>()
+    private val anims = ConcurrentHashMap<String, Any>()
+    private val noSheet = Any()
+    private val stills = HashMap<Element, Anim>()
+    private val auras = HashMap<Element, Bitmap>()
+    private val inner = RectF()
 
     @Suppress("DiscouragedApi")
     private fun sheetId(kind: Kind, e: Element, variant: Int): Int {
@@ -254,52 +278,41 @@ class Art(private val res: Resources, private val packageName: String) {
         return if (n <= 1) 0 else Math.floorMod(look / 7, n)
     }
 
-    /** All frames of one animation, already sized for drawing, or null if there is no sheet. */
-    private fun animFrames(kind: Kind, e: Element, variant: Int, size: Int): Array<Bitmap>? {
-        val key = "$kind/$e/$variant/$size"
-        animCache[key]?.let { return it }
-        if (noAnim.containsKey(key)) return null
+    /**
+     * One animation's sheet, decoded the first time it is needed (once, even if two threads ask at
+     * the same moment), or null if there is no such sheet.
+     */
+    private fun anim(kind: Kind, e: Element, variant: Int): Anim? =
+        anims.computeIfAbsent("$kind/$e/$variant") { loadAnim(kind, e, variant) ?: noSheet } as? Anim
+
+    private fun loadAnim(kind: Kind, e: Element, variant: Int): Anim? {
         val id = sheetId(kind, e, variant)
-        if (id == 0) {
-            noAnim[key] = true
-            return null
+        if (id == 0) return null
+        val opts = BitmapFactory.Options().apply {
+            inScaled = false
+            if (hardwareBitmaps) inPreferredConfig = Bitmap.Config.HARDWARE
         }
-        val s = BitmapFactory.decodeResource(res, id, BitmapFactory.Options().apply { inScaled = false })
-        val cols = if (kind == Kind.FREEZE || kind == Kind.HIT) FREEZE_COLS else ANIM_COLS
-        val rows = if (kind == Kind.FREEZE || kind == Kind.HIT) FREEZE_ROWS else ANIM_ROWS
-        val fw = s.width / cols
-        val fh = s.height / rows
-        val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val frames = Array(cols * rows) { k ->
-            val src = Rect((k % cols) * fw, (k / cols) * fh, (k % cols + 1) * fw, (k / cols + 1) * fh)
-            if (kind == Kind.GLOBE) {
-                renderGlobe(e, size) { c, dst -> c.drawBitmap(s, src, dst, p) }
-            } else {
-                val w = max(1, size * fw / fh)
-                Bitmap.createBitmap(w, size, Bitmap.Config.ARGB_8888).also { b ->
-                    Canvas(b).drawBitmap(s, src, RectF(0f, 0f, w.toFloat(), size.toFloat()), p)
-                }
-            }
-        }
-        s.recycle()
-        animCache[key] = frames
-        return frames
+        val sheet = BitmapFactory.decodeResource(res, id, opts)
+            ?: BitmapFactory.decodeResource(res, id, BitmapFactory.Options().apply { inScaled = false })
+            ?: return null
+        val small = kind == Kind.FREEZE || kind == Kind.HIT
+        return Anim(sheet, if (small) FREEZE_COLS else ANIM_COLS, if (small) FREEZE_ROWS else ANIM_ROWS)
     }
 
     /**
-     * Cuts out the frames of every globe, shot and freeze animation of [elements] on a background
-     * thread, at the sizes the duel draws them, so the first appearance of a variant doesn't stall
-     * a frame. Anything not ready yet is simply built when it is first drawn.
+     * Decodes the globe, shot, freeze and hit sheets of [elements] (the ones in play) on a
+     * background thread, so the first appearance of a variant doesn't stall a frame. Anything not
+     * ready yet is decoded when it is first drawn; elements not in play are never loaded.
      */
-    fun preload(elements: List<Element>, globeSize: Int, shotHeight: Int, freezeHeight: Int, hitSizes: List<Int>) {
+    fun preload(elements: List<Element>) {
         Thread {
             for (e in elements) {
                 for (v in 0 until MAX_VARIANTS) {
-                    if (sheetId(Kind.GLOBE, e, v) != 0) animFrames(Kind.GLOBE, e, v, globeSize)
-                    if (sheetId(Kind.PROJECTILE, e, v) != 0) animFrames(Kind.PROJECTILE, e, v, shotHeight)
+                    anim(Kind.GLOBE, e, v)
+                    anim(Kind.PROJECTILE, e, v)
                 }
-                animFrames(Kind.FREEZE, e, 0, freezeHeight)
-                for (s in hitSizes) animFrames(Kind.HIT, e, 0, s)
+                anim(Kind.FREEZE, e, 0)
+                anim(Kind.HIT, e, 0)
             }
         }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
     }
@@ -309,25 +322,16 @@ class Art(private val res: Resources, private val packageName: String) {
         Bitmap.createScaledBitmap(source(Kind.BUTTON, e), size, size, true)
     }
 
-    /**
-     * A soft aura in the element's colour, with the globe image on top at 88% of the size.
-     * [body] draws the globe image into the given rectangle (the still image by default).
-     */
-    private fun renderGlobe(
-        e: Element,
-        size: Int,
-        body: (Canvas, RectF) -> Unit = { c, dst -> c.drawBitmap(source(Kind.GLOBE, e), null, dst, Paint(Paint.FILTER_BITMAP_FLAG)) },
-    ): Bitmap {
+    /** The soft aura behind a globe in the element's colour: one small bitmap per element, drawn scaled. */
+    private fun aura(e: Element): Bitmap = auras.getOrPut(e) {
+        val size = 128
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
         val r = size / 2f
-        val br = r * 0.88f
         val col = color(e)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.shader = RadialGradient(r, r, r, intArrayOf(withAlpha(col, 120), withAlpha(col, 0)), floatArrayOf(0.8f, 1f), Shader.TileMode.CLAMP)
-        c.drawCircle(r, r, r, p)
-        body(c, RectF(r - br, r - br, r + br, r + br))
-        return bmp
+        Canvas(bmp).drawCircle(r, r, r, p)
+        bmp
     }
 
     // ---------------------------------------------------------------- mage

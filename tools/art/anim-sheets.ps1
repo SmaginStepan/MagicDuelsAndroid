@@ -1,7 +1,7 @@
-﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png вЂ¦).
+﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png …).
 #   Old use, one element:  anim-sheets.ps1 -Art <art dir> -Res <drawable dir> -Element water [-ProjectilesOnly]
-#   Any frames в†’ any sheet: anim-sheets.ps1 -Kind globe|projectile -Frames <dir> -Out <png>
-#   Freeze (shot в†’ globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
+#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit -Frames <dir> -Out <png or webp>
+#   Freeze (shot → globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #     where (Cx, Cy) and D are the globe's centre and diameter in the video's end frame (video pixels).
 param([string]$Art, [string]$Res, [string]$Element = "fire", [switch]$ProjectilesOnly,
       [string]$Kind, [string]$Frames, [string]$Out, [double]$Cx, [double]$Cy, [double]$D, [string]$Track, [switch]$NoLock, [double]$HeadFrac = 0.45)
@@ -126,7 +126,7 @@ public static class AnimSheet {
 
     static double Median(double[] v) { double[] c = (double[])v.Clone(); Array.Sort(c); return c[c.Length / 2]; }
 
-    // Projectile: key every frame, then lock the head in place вЂ” each frame is shifted so its head sits
+    // Projectile: key every frame, then lock the head in place — each frame is shifted so its head sits
     // where the median frame has it. In the game the head then moves at exactly the flight speed, in a
     // straight line, while the tail keeps its own animation. One shared crop for all frames.
     public static string Projectile(string dir, string dst, int frameHeight, int lo, int hi, bool lockHead = true, double headFrac = HeadFrac) {
@@ -228,7 +228,7 @@ public static class AnimSheet {
         using (Bitmap o = FromBytes(op, sheet.Width, sheet.Height)) o.Save(dst, ImageFormat.Png);
     }
 
-    // Diameter of the solid blob around (cx, cy) вЂ” the comet's head or the forming orb: along rays
+    // Diameter of the solid blob around (cx, cy) — the comet's head or the forming orb: along rays
     // from the centre (skipping the tail side on the left), where each ray last meets a solidly
     // covered pixel; the median over the rays, so stray frost puffs don't count.
     static double OrbSize(byte[] px, int W, int H, int s, double cx, double cy, double maxR) {
@@ -273,7 +273,7 @@ public static class AnimSheet {
         double wh = d / globeFrac, ww = wh * aspect;
         int n = Math.Min(files.Length, cols * rows);
         // Size of the head (or the forming orb) in each frame: in a band of columns around the
-        // globe's centre, the most rows that are solidly covered вЂ” the same measure as the comet
+        // globe's centre, the most rows that are solidly covered — the same measure as the comet
         // heads. Relative to the last frame, which is the globe.
         Bitmap[] keyed = new Bitmap[n];
         double[] size = new double[n];
@@ -325,8 +325,8 @@ public static class AnimSheet {
     }
 
     // Hit burst: a one-shot square video (the blast at its peak, flying apart to black). Every frame is
-    // brightness-keyed, scaled whole into a sizeГ—size cell, and faded out towards a circle so the
-    // square never shows; 16 frames in a 4Г—4 grid (Art.hitFrames).
+    // brightness-keyed, scaled whole into a size×size cell, and faded out towards a circle so the
+    // square never shows; 16 frames in a 4×4 grid (Art.hit).
     public static string Hit(string dir, string dst, int size, int lo, int hi) {
         string[] files = Frames(dir);
         int n = Math.Min(files.Length, 16);
@@ -359,13 +359,16 @@ public static class AnimSheet {
 "@
 
 if ($Kind) {
+    # -Out *.webp: the sheet is built as PNG, then converted with tools/art/to-webp.ps1 (lossy, alpha kept).
+    $webp = $Out -like "*.webp"
+    if ($webp) { $Out = [IO.Path]::ChangeExtension($Out, ".png") }
     switch ($Kind) {
         "hit"        { "hit:        " + [AnimSheet]::Hit($Frames, $Out, 256, 28, 110) }
         "globe"      { "globe:      " + [AnimSheet]::Globe($Frames, $Out, 128, 48) }
         "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac) }
         # Matches Art.FREEZE_GLOBE, FREEZE_ASPECT, FREEZE_COLS and FREEZE_ROWS in the game; the clip starts
-        # at the flying comet's head size: GameView.SHOT_HEIGHT (1.35 cells) Г— HeadFrac over a 0.9-cell globe.
-        # -Track "dx:size,dx:size,вЂ¦" (16 frames, in globes): where the orb is, left of the final globe, and
+        # at the flying comet's head size: GameView.SHOT_HEIGHT (1.35 cells) × HeadFrac over a 0.9-cell globe.
+        # -Track "dx:size,dx:size,…" (16 frames, in globes): where the orb is, left of the final globe, and
         # how big it is, measured by eye from the frames (art/ANIMATIONS.md); without it the size is measured.
         "freeze"     {
             $dx = $null; $sz = $null
@@ -376,6 +379,7 @@ if ($Kind) {
             "freeze:     " + [AnimSheet]::Freeze($Frames, $Out, 200, $Cx, $Cy, $D, 0.42, 1.8, 4, 4, 8, 60, 1.35 * $HeadFrac / 0.9, $dx, $sz)
         }
     }
+    if ($webp) { & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files $Out }
     return
 }
 

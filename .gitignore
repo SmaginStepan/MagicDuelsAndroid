@@ -17,3 +17,6 @@
 /art/*/anim/idle.png
 /art/*/anim/*/*/frame_*.png
 /art/*/freeze/*/frame_*.png
+
+# Google's WebP tools (cwebp/dwebp), downloaded locally, see tools/art/to-webp.ps1
+/tools/art/bin/
