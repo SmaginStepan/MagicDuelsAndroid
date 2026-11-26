@@ -19,7 +19,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - While a mage casts, its target lane lights up with a **countdown**: the seconds until the shot reaches
   the field, a small quiet number at the bottom of the lane strip (no border or animation). The bot's
   lanes show one too.
-- The tapped spell's whole row and column (7 spells) dissolve and are refilled when the cast completes.
+- The tapped spell's whole row and column (7 spells) dissolve. The tapped button stays as it is, with a
+  progress ring, and is replaced the moment the cast completes. The other new spells are chosen at once and appear
+  as small element symbols that grow during the cast; they become usable buttons when the cast completes.
 - While casting, a **Cancel cast** button appears above your mage. Cancelling fires nothing and brings the
   dissolved spells back unchanged, so you can pick again straight away. The button disappears when the
   cast is fired or cancelled.

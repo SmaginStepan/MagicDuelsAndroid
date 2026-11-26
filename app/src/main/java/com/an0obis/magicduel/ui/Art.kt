@@ -24,8 +24,9 @@ import kotlin.math.sin
 
 /**
  * All drawing of game pieces: element symbols, crystal globes, projectiles and avatars.
- * Globes use the Midjourney images in res/drawable-nodpi (see art/elements/PROMPTS.md);
- * everything else is vector, authored in a 100-unit box and scaled, so it stays crisp at any size.
+ * Element symbols, globes, shots, buttons and their animations are Midjourney images in
+ * res/drawable-nodpi (prompts in the project's art/ folder); the mage is vector, authored in a
+ * 100-unit box and scaled, so it stays crisp at any size.
  */
 class Art(private val res: Resources, private val packageName: String) {
     companion object {
@@ -62,92 +63,24 @@ class Art(private val res: Resources, private val packageName: String) {
 
     // ---------------------------------------------------------------- element symbols
 
-    private val firePath = Path().apply {
-        moveTo(0f, -48f)
-        cubicTo(14f, -28f, 38f, -14f, 36f, 12f)
-        cubicTo(34f, 36f, 18f, 48f, 0f, 48f)
-        cubicTo(-18f, 48f, -36f, 36f, -36f, 14f)
-        cubicTo(-36f, -2f, -27f, -12f, -21f, -26f)
-        cubicTo(-14f, -14f, -9f, -10f, -4f, -9f)
-        cubicTo(-2f, -24f, -8f, -36f, 0f, -48f)
-        close()
-    }
-    private val fireCore = Path().apply {
-        moveTo(0f, 2f)
-        cubicTo(10f, 14f, 18f, 22f, 16f, 31f)
-        cubicTo(14f, 42f, -14f, 42f, -16f, 31f)
-        cubicTo(-18f, 22f, -8f, 14f, 0f, 2f)
-        close()
-    }
-    private val waterPath = Path().apply {
-        moveTo(0f, -48f)
-        cubicTo(12f, -30f, 36f, -6f, 36f, 14f)
-        cubicTo(36f, 36f, 20f, 48f, 0f, 48f)
-        cubicTo(-20f, 48f, -36f, 36f, -36f, 14f)
-        cubicTo(-36f, -6f, -12f, -30f, 0f, -48f)
-        close()
-    }
-    private val earthPath = Path().apply {
-        moveTo(-48f, 36f)
-        lineTo(-14f, -32f)
-        lineTo(2f, -2f)
-        lineTo(17f, -22f)
-        lineTo(48f, 36f)
-        close()
-    }
-    private val airPaths = listOf(
-        Path().apply {
-            moveTo(-42f, -14f); lineTo(14f, -14f)
-            cubicTo(32f, -14f, 34f, -40f, 18f, -40f)
-            cubicTo(8f, -40f, 4f, -30f, 10f, -25f)
-        },
-        Path().apply {
-            moveTo(-42f, 6f); lineTo(26f, 6f)
-            cubicTo(44f, 6f, 46f, 32f, 29f, 32f)
-            cubicTo(19f, 32f, 15f, 22f, 21f, 18f)
-        },
-        Path().apply { moveTo(-32f, 26f); lineTo(2f, 26f) },
-    )
-    private val boltPath = Path().apply {
-        moveTo(10f, -48f); lineTo(-26f, 6f); lineTo(-2f, 6f); lineTo(-12f, 48f)
-        lineTo(28f, -10f); lineTo(4f, -10f); lineTo(18f, -48f); close()
-    }
-    private val moonPath = Path().apply {
-        addCircle(0f, 0f, 40f, Path.Direction.CW)
-        op(Path().apply { addCircle(18f, -12f, 33f, Path.Direction.CW) }, Path.Op.DIFFERENCE)
+    /**
+     * Draws the Midjourney symbol of [e] (sym_*, a glowing emblem with no tile, see
+     * art/symbols/PROMPTS.md) centred on (cx, cy), [size] pixels across, with [paint] (its alpha
+     * fades the symbol).
+     */
+    fun drawSymbol(c: Canvas, e: Element, cx: Float, cy: Float, size: Float, paint: Paint) {
+        val h = size / 2f
+        symbolDst.set(cx - h, cy - h, cx + h, cy + h)
+        c.drawBitmap(source(Kind.SYMBOL, e), null, symbolDst, paint)
     }
 
-    /** Draws the symbol of [e] centred on (cx, cy), about [size] pixels across. */
-    fun drawSymbol(c: Canvas, e: Element, cx: Float, cy: Float, size: Float, color: Int) {
-        c.save()
-        c.translate(cx, cy)
-        val s = size / 100f
-        c.scale(s, s)
-        fill.color = color
-        when (e) {
-            Element.FIRE -> {
-                c.drawPath(firePath, fill)
-                fill.color = withAlpha(mix(color, BLACK, 0.35f), Color.alpha(color))
-                c.drawPath(fireCore, fill)
-            }
-            Element.WATER -> c.drawPath(waterPath, fill)
-            Element.EARTH -> c.drawPath(earthPath, fill)
-            Element.AIR -> {
-                stroke.color = color
-                stroke.strokeWidth = 10f
-                airPaths.forEach { c.drawPath(it, stroke) }
-            }
-            Element.LIGHTNING -> c.drawPath(boltPath, fill)
-            Element.SHADOW -> c.drawPath(moonPath, fill)
-        }
-        c.restore()
-    }
+    private val symbolDst = RectF()
 
     // ---------------------------------------------------------------- Midjourney sprites
     // res/drawable-nodpi: orb_* (globes), proj_* (flying projectiles, head on the right),
-    // btn_* (spell buttons). Sources and prompts are in the project's art/ folder.
+    // btn_* (spell buttons), sym_* (element symbols). Sources and prompts are in the project's art/ folder.
 
-    private enum class Kind { GLOBE, PROJECTILE, BUTTON, FREEZE, HIT }
+    private enum class Kind { GLOBE, PROJECTILE, BUTTON, SYMBOL, FREEZE, HIT }
 
     private val sources = HashMap<Pair<Kind, Element>, Bitmap>()
     private val scaled = HashMap<Triple<Kind, Element, Int>, Bitmap>()
@@ -178,6 +111,14 @@ class Art(private val res: Resources, private val packageName: String) {
                 Element.AIR -> R.drawable.btn_air
                 Element.LIGHTNING -> R.drawable.btn_lightning
                 Element.SHADOW -> R.drawable.btn_shadow
+            }
+            Kind.SYMBOL -> when (e) {
+                Element.FIRE -> R.drawable.sym_fire
+                Element.WATER -> R.drawable.sym_water
+                Element.EARTH -> R.drawable.sym_earth
+                Element.AIR -> R.drawable.sym_air
+                Element.LIGHTNING -> R.drawable.sym_lightning
+                Element.SHADOW -> R.drawable.sym_shadow
             }
         }
         BitmapFactory.decodeResource(res, id, BitmapFactory.Options().apply { inScaled = false })

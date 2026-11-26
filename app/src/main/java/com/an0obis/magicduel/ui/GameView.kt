@@ -497,7 +497,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 spawnMatch(e)
                 sounds.play(Sounds.Fx.POP, 0.8f)
             }
-            is BattleEvent.SpellsRefilled -> e.cells.forEach { tilePop[it.row][it.col] = 0f }
+            // The grown symbols pop into buttons; the cast spell's own tile is swapped at once.
+            is BattleEvent.SpellsRefilled -> e.cells.forEach {
+                tilePop[it.row][it.col] = if (it.row == tappedRow && it.col == tappedCol) 1f else 0f
+            }
             is BattleEvent.PushedOut -> texts += FloatText(
                 s(R.string.pushed_out), cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
             )
@@ -1441,9 +1444,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 if (!spells.isAvailable(r, col)) {
                     fill.color = Pal.TILE_EMPTY
                     c.drawRoundRect(rect, rr, rr, fill)
-                    val p = caster.castProgress
-                    fill.color = withAlpha(WHITE, (30 + 70 * p).toInt())
-                    c.drawCircle(rect.centerX(), rect.centerY(), 0.05f * u + 0.1f * u * p, fill)
+                    // The new spell is already chosen: its element symbol grows slowly during the cast
+                    // and becomes a button when the cast completes (SpellsRefilled pops it in).
+                    val next = spells.upcoming(r, col) ?: continue
+                    if (r == tappedRow && col == tappedCol && caster.isCasting) continue // the cast button, drawn below
+                    drawUpcoming(c, next, rect.centerX(), rect.centerY(), caster.castProgress)
                     continue
                 }
                 val element = spells[r, col]
@@ -1457,25 +1462,31 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 c.restore()
             }
         }
-        // The spell being cast shrinks inside its tile while a progress ring fills around it.
+        // The spell being cast stays as it is in its tile while a progress ring fills around it; its
+        // replacement shows only when the cast completes (no growing symbol here).
         val element = caster.castElement
         if (element != null && tappedRow >= 0) {
             val x0 = gridLeft + tappedCol * (tile + tileGap)
             val y0 = gridTop + tappedRow * (tile + tileGap)
-            val col = art.color(element)
-            val p = caster.castProgress
             rect.set(x0 + 0.08f * u, y0 + 0.08f * u, x0 + tile - 0.08f * u, y0 + tile - 0.08f * u)
-            val k = 1f - 0.35f * p
-            val half = rect.width() * k / 2f
-            val cx = rect.centerX()
-            val cy = rect.centerY()
             bitmapPaint.alpha = 230
-            c.drawBitmap(art.button(element, tile.toInt().coerceAtLeast(8)), null, RectF(cx - half, cy - half, cx + half, cy + half), bitmapPaint)
+            c.drawBitmap(art.button(element, tile.toInt().coerceAtLeast(8)), null, rect, bitmapPaint)
             bitmapPaint.alpha = 255
-            stroke.color = col
+            stroke.color = art.color(element)
             stroke.strokeWidth = 0.08f * u
-            c.drawArc(rect, -90f, 360f * p, false, stroke)
+            c.drawArc(rect, -90f, 360f * caster.castProgress, false, stroke)
         }
+    }
+
+    /**
+     * A spell that is coming: just its glowing element symbol, no button, growing from a small seed
+     * to most of the tile as the cast progresses ([p] 0..1).
+     */
+    private fun drawUpcoming(c: Canvas, e: Element, cx: Float, cy: Float, p: Float) {
+        val size = tile * (0.24f + 0.62f * easeOut(p))
+        bitmapPaint.alpha = (150 + 105 * p).toInt()
+        art.drawSymbol(c, e, cx, cy, size, bitmapPaint)
+        bitmapPaint.alpha = 255
     }
 
     private fun drawBolts(c: Canvas) {

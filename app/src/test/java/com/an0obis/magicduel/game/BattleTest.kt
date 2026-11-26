@@ -35,6 +35,25 @@ class BattleTest {
     }
 
     @Test
+    fun newSpellsAreChosenWhenTheCastStartsAndArriveWhenItEnds() {
+        val grid = SpellGrid(Random(4), Element.active(4))
+        assertNull(grid.upcoming(0, 0))
+        grid.take(2, 1)
+        val coming = (0 until grid.rows).flatMap { r -> (0 until grid.cols).mapNotNull { c -> grid.upcoming(r, c)?.let { Cell(r, c) to it } } }
+        assertEquals(7, coming.size) // row 2 and column 1
+        grid.refill()
+        coming.forEach { (cell, e) -> assertEquals(e, grid[cell.row, cell.col]) }
+        assertNull(grid.upcoming(2, 1))
+        // A cancelled cast forgets the chosen spells: the old ones come back.
+        val before = grid[0, 0]
+        grid.take(0, 0)
+        assertTrue(grid.upcoming(0, 0) != null)
+        grid.restore()
+        assertNull(grid.upcoming(0, 0))
+        assertEquals(before, grid[0, 0])
+    }
+
+    @Test
     fun castingTakesItsLanesTimeAndBlocksAnotherCast() {
         val b = Battle(dummy, seed = 3, introTime = 0f)
         assertTrue(b.tryCast(0, 0))
