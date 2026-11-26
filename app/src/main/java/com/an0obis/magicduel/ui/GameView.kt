@@ -564,7 +564,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val x = cellX(it.col.toFloat())
                     val y = cellY(it.row.toFloat())
                     brokenWalls += BrokenWall(x, y, battle.board.wallLook(it.row, it.col))
-                    rings += Ring(x, y, mix(WALL_CRYSTAL, WHITE, 0.4f), 0.2f * fu, 0.75f * fu, 0.3f)
+                    rings += Ring(x, y, mix(WALL_COLOR, WHITE, 0.4f), 0.2f * fu, 0.75f * fu, 0.3f)
                 }
             }
             is BattleEvent.Launched -> {
@@ -1069,7 +1069,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.drawBitmap(art.wallBlock(size, board.wallLook(r, col)), null, rect, bitmapPaint)
             if (k < 1f) {
                 // A flash of conjuring light as it appears.
-                fill.color = withAlpha(WALL_CRYSTAL, (110 * (1f - k)).toInt())
+                fill.color = withAlpha(WALL_COLOR, (110 * (1f - k)).toInt())
                 c.drawRoundRect(rect, 0.06f * size, 0.06f * size, fill)
             }
         }
@@ -1096,7 +1096,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         bitmapPaint.alpha = 255
     }
 
-    /** The colour of what [caster] is casting: its element's, or the walls' gold. */
+    /** The colour of what [caster] is casting: its element's, or the walls' crystal blue. */
     private fun castColor(caster: Caster): Int? = when {
         caster.castElement != null -> art.color(caster.castElement!!)
         caster.castWallColumn >= 0 -> WALL_COLOR
@@ -1857,11 +1857,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val WALL_BUTTON_DISABLED_ALPHA = 110
         const val WALL_BUTTON_FADE = 0.25f
 
-        /** Wall casts' colour: the gold glow of the wall button (its cast ring, the column glow). */
-        val WALL_COLOR = 0xFFE8B15A.toInt()
-
-        /** The crystal walls' own light: blue-violet, for their flash as they rise and the ring when they shatter. */
-        val WALL_CRYSTAL = 0xFF7F8CFF.toInt()
+        /**
+         * Walls' colour: the blue-violet light of the crystal walls, shared by the wall button, its cast
+         * ring, the column glow, a wall's flash as it rises and the ring when it shatters.
+         */
+        val WALL_COLOR = 0xFF7F8CFF.toInt()
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f

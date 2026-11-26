@@ -5,7 +5,7 @@ Walls).
 
 ## Button
 
-The same prompt as the spell buttons (`../buttons/PROMPTS.md`), with a sandstone gold rim and a brick
+The same prompt as the spell buttons (`../buttons/PROMPTS.md`), with a sandstone gold rim (recoloured blue, see below) and a brick
 wall emblem. Pick 0 drew a battlement wall, which reads as a wall even at button size.
 
 ```
@@ -14,6 +14,9 @@ a square fantasy game spell button with rounded corners, dark polished obsidian 
 
 Job b032b233-6990-44c6-87e5-88d53457240d, pick 0. Its background is dark grey (about 30), not black,
 so the cut uses a brightness threshold of 60.
+
+The cut then recolours it (`SymbolCutter.Recolor`, hue 232°) so the gold rim and emblem glow in the
+blue-violet of the crystal walls it conjures; brightness and saturation are kept.
 
 ## Wall on the field: arcane crystal bricks (11 variants)
 

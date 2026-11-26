@@ -76,6 +76,40 @@ public static class SymbolCutter {
         }
     }
 
+    // Recolours a sprite in place: every pixel takes the hue [hue] (degrees), keeping its brightness
+    // and saturation, so a gold glow becomes a blue one with the same light and shade.
+    public static void Recolor(string path, double hue) {
+        Bitmap b;
+        using (Bitmap f = new Bitmap(path)) b = new Bitmap(f);
+        int W = b.Width, H = b.Height;
+        BitmapData d = b.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+        byte[] px = new byte[d.Stride * H];
+        Marshal.Copy(d.Scan0, px, 0, px.Length);
+        double h6 = hue / 60.0;
+        for (int i = 0; i < px.Length; i += 4) {
+            double bl = px[i] / 255.0, gr = px[i + 1] / 255.0, rd = px[i + 2] / 255.0;
+            double max = Math.Max(rd, Math.Max(gr, bl)), min = Math.Min(rd, Math.Min(gr, bl));
+            double v = max, s = max > 0 ? (max - min) / max : 0;
+            double c = v * s, x = c * (1 - Math.Abs(h6 % 2 - 1)), m = v - c;
+            double r1 = 0, g1 = 0, b1 = 0;
+            switch ((int)h6 % 6) {
+                case 0: r1 = c; g1 = x; break;
+                case 1: r1 = x; g1 = c; break;
+                case 2: g1 = c; b1 = x; break;
+                case 3: g1 = x; b1 = c; break;
+                case 4: r1 = x; b1 = c; break;
+                default: r1 = c; b1 = x; break;
+            }
+            px[i] = (byte)Math.Round((b1 + m) * 255);
+            px[i + 1] = (byte)Math.Round((g1 + m) * 255);
+            px[i + 2] = (byte)Math.Round((r1 + m) * 255);
+        }
+        Marshal.Copy(px, 0, d.Scan0, px.Length);
+        b.UnlockBits(d);
+        b.Save(path, ImageFormat.Png);
+        b.Dispose();
+    }
+
     public static string Cut(string src, string dst, int size, int lo, int hi, double pad, bool fade) {
         using (Bitmap b = new Bitmap(src)) {
             int W = b.Width, H = b.Height;
@@ -156,6 +190,8 @@ if ($Kind -eq 'walls') {
     Get-ChildItem $resDir -Filter 'wall_block*.webp' | Remove-Item
     $pngs = @()
     "{0,-12} {1}" -f 'button', [SymbolCutter]::Tile("$dir\originals\button.png", "$dir\sprites\button.png", 256, 60, 0.95, 0.17, $false)
+    # The button's gold rim and emblem take the blue-violet of the crystal walls it conjures.
+    [SymbolCutter]::Recolor("$dir\sprites\button.png", 232)
     Copy-Item "$dir\sprites\button.png" "$resDir\wall_button.png" -Force
     $pngs += "$resDir\wall_button.png"
     $i = 1
