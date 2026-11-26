@@ -12,7 +12,7 @@ class Tutorial {
     private var stepTime = 0f
     private var backfireTime = 0f
 
-    /** The hint to show right now, or null when there is nothing to say. */
+    /** The hint to show right now (a string resource name), or null when there is nothing to say. */
     val hint: String?
         get() = when {
             backfireTime > 0f -> BACKFIRE
@@ -63,10 +63,11 @@ class Tutorial {
         const val DAMAGE_HINT_TIME = 7f
         const val BACKFIRE_HINT_TIME = 4f
 
-        const val TAP_SPELL = "Tap a spell below to cast it. Its row number (1–5) is the lane it flies along."
-        const val WATCH_SHOT = "Casting takes a moment. Then your spell flies down its lane and pushes that row to the far side."
-        const val MAKE_LINE = "Line up 3 or more of the same element in a row or a column. They explode and hit your opponent."
-        const val DAMAGE = "Each exploded globe deals 5 damage. Falling globes can set off chain explosions: ×2, ×3…"
-        const val BACKFIRE = "That row was full, so your spell backfired and hit you. Aim at rows with space."
+        // Hints are string resource names; the screen shows them in the chosen language.
+        const val TAP_SPELL = "tut_tap_spell"
+        const val WATCH_SHOT = "tut_watch_shot"
+        const val MAKE_LINE = "tut_make_line"
+        const val DAMAGE = "tut_damage"
+        const val BACKFIRE = "tut_backfire"
     }
 }

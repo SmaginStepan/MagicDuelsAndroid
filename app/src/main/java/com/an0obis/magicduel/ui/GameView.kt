@@ -1,7 +1,13 @@
 package com.an0obis.magicduel.ui
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.text.InputFilter
+import android.view.WindowManager
+import android.widget.EditText
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.LinearGradient
@@ -22,6 +28,8 @@ import com.an0obis.magicduel.game.Battle
 import com.an0obis.magicduel.game.BattleEvent
 import com.an0obis.magicduel.game.Element
 import com.an0obis.magicduel.game.Globe
+import com.an0obis.magicduel.R
+import com.an0obis.magicduel.game.Opponent
 import com.an0obis.magicduel.game.Opponents
 import com.an0obis.magicduel.game.Projectile
 import com.an0obis.magicduel.game.Rules
@@ -101,6 +109,35 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var battle = Battle(Opponents.forLevel(level))
     private var tutorial: Tutorial? = null
     private val art = Art(context.resources, context.packageName)
+    private val sounds = Sounds(context)
+
+    // ---- settings (Options) ----
+    /** "en", "ru" or "es"; first time: the phone's language if the game has it, else English. */
+    private var language = prefs.getString(KEY_LANGUAGE, null)
+        ?: Locale.getDefault().language.takeIf { it in LANGUAGES.map { l -> l.first } } ?: "en"
+    private var soundOn = prefs.getBoolean(KEY_SOUND, true)
+    private var playerName = prefs.getString(KEY_NAME, "") ?: ""
+
+    /** The game's texts in [language], whatever language the phone uses. */
+    private var str: Resources = localized(language)
+
+    private fun localized(lang: String): Resources {
+        val config = Configuration(context.resources.configuration)
+        config.setLocale(Locale(lang))
+        return context.createConfigurationContext(config).resources
+    }
+
+    private fun s(id: Int, vararg args: Any): String = str.getString(id, *args)
+
+    /** The opponent's name in the chosen language. */
+    private fun opponentName(o: Opponent): String = when {
+        o.dummyIndex >= 0 -> str.getStringArray(R.array.dummy_names)[o.dummyIndex]
+        o.titleIndex >= 0 -> s(R.string.opponent_fmt, str.getStringArray(R.array.mage_titles)[o.titleIndex], str.getStringArray(R.array.mage_names)[o.nameIndex])
+        else -> o.name
+    }
+
+    /** Your name as shown in the duel: what you typed in Options, or "You". */
+    private fun displayName(): String = playerName.ifBlank { s(R.string.default_name) }
 
     // ---- screens: the start menu (with small dialogs) and the duel ----
     private enum class Screen { MENU, BATTLE }
@@ -110,6 +147,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var dialogOpenedAt = 0f
     private val menuButtons = LinkedHashMap<String, RectF>()
     private val dialogButtons = LinkedHashMap<String, RectF>()
+    private val dialogCard = RectF()
     private val battleMenuButton = RectF()
 
     /** "Cancel cast" button above your mage; only shown (and tappable) while you are casting. */
@@ -187,6 +225,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val stars = FloatArray(STAR_COUNT * 3)
 
     init {
+        sounds.enabled = soundOn
         val r = Random(7)
         for (i in stars.indices) stars[i] = r.nextFloat()
         startBattle()
@@ -197,12 +236,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     fun resume() {
         if (running) return
         running = true
+        sounds.resume()
         lastFrameNanos = 0L
         Choreographer.getInstance().postFrameCallback(this)
     }
 
     fun pause() {
         running = false
+        sounds.pause()
         Choreographer.getInstance().removeFrameCallback(this)
     }
 
@@ -314,6 +355,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             .putInt(KEY_LEVEL, level)
             .putBoolean(KEY_TUTORIAL_DONE, tutorialDone)
             .putBoolean(KEY_PLAYED, played)
+            .putString(KEY_LANGUAGE, language)
+            .putBoolean(KEY_SOUND, soundOn)
+            .putString(KEY_NAME, playerName)
             .apply()
     }
 
@@ -330,7 +374,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /** Android back: close a dialog, or leave the duel for the menu. Returns false to let the app close. */
     fun onBack(): Boolean = when {
-        dialog != null -> { dialog = null; true }
+        dialog != null -> { dialog = if (dialog == Dialog.RESTART) Dialog.OPTIONS else null; true }
         screen == Screen.BATTLE -> { screen = Screen.MENU; true }
         else -> false
     }
@@ -366,6 +410,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                         first = true
                         onHit(group.target, group.damage)
                         hitBurst(group.target, s.element)
+                        sounds.hit(s.element)
                     }
                 }
                 if (effects.travelsAsBolt(s.element)) effects.zap(s.element, s.x0, s.y0, s.x1, s.y1)
@@ -414,44 +459,55 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             save()
         }
         when (e) {
-            is BattleEvent.CastStarted -> Unit
+            // Tapping a spell: a plain, quiet button click (the bot taps nothing, so it is silent).
+            is BattleEvent.CastStarted -> if (e.side == Side.PLAYER) sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
             is BattleEvent.CastCancelled -> {
+                sounds.play(Sounds.Fx.UI_BACK, 0.8f)
                 // The dissolved spells pop back in; the staff lowers without a shot.
                 e.cells.forEach { tilePop[it.row][it.col] = 0f }
                 tappedRow = -1
                 tappedCol = -1
                 afterglow[Side.PLAYER.ordinal] = 0f
                 // Starts below where the button was, so it fades out before reaching your HP bar.
-                texts += FloatText("Cancelled", cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
+                texts += FloatText(s(R.string.cancelled), cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
             }
             is BattleEvent.Launched -> {
                 val from = staffTip(e.side)
                 bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
                 afterglow[e.side.ordinal] = 1f
                 lastCastColor[e.side.ordinal] = art.color(e.element)
+                sounds.play(Sounds.Fx.LAUNCH, 0.55f)
             }
             // Elements with a freeze clip show the shot freezing (drawFreeze); the others get a frost ring.
-            is BattleEvent.Landed -> if (art.freeze(e.element) == null) rings += Ring(
-                cellX(e.col.toFloat()), cellY(e.row.toFloat()),
-                mix(art.color(e.element), WHITE, 0.65f), 0.25f * fu, 0.8f * fu, 0.35f,
-            )
-            is BattleEvent.Backfired -> texts += FloatText("Backfire!", endX(e.side), laneY(e.lane) - 0.45f * u, Pal.ENEMY_HP, 0.38f * u, 0.9f)
+            is BattleEvent.Landed -> {
+                sounds.play(Sounds.Fx.FREEZE, 0.5f)
+                if (art.freeze(e.element) == null) rings += Ring(
+                    cellX(e.col.toFloat()), cellY(e.row.toFloat()),
+                    mix(art.color(e.element), WHITE, 0.65f), 0.25f * fu, 0.8f * fu, 0.35f,
+                )
+            }
+            is BattleEvent.Backfired -> texts += FloatText(s(R.string.backfire), endX(e.side), laneY(e.lane) - 0.45f * u, Pal.ENEMY_HP, 0.38f * u, 0.9f)
             is BattleEvent.BackfireHit -> {
                 onHit(e.side, e.damage)
                 hitBurst(e.side, e.element)
+                sounds.hit(e.element)
                 chest(e.side).let { effects.impact(e.element, it.x, it.y, 0.8f) }
             }
-            is BattleEvent.Matched -> spawnMatch(e)
+            is BattleEvent.Matched -> {
+                spawnMatch(e)
+                sounds.play(Sounds.Fx.POP, 0.8f)
+            }
             is BattleEvent.SpellsRefilled -> e.cells.forEach { tilePop[it.row][it.col] = 0f }
             is BattleEvent.PushedOut -> texts += FloatText(
-                "Pushed out!", cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
+                s(R.string.pushed_out), cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
             )
             is BattleEvent.PushOutHit -> {
                 onHit(e.target, e.damage)
                 hitBurst(e.target, e.element)
+                sounds.hit(e.element)
                 chest(e.target).let { effects.impact(e.element, it.x, it.y, 0.8f) }
             }
-            is BattleEvent.GameOver -> Unit
+            is BattleEvent.GameOver -> sounds.play(if (e.winner == Side.PLAYER) Sounds.Fx.WIN else Sounds.Fx.LOSE)
         }
     }
 
@@ -488,7 +544,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             }
         }
         if (e.chain >= 2) {
-            texts += FloatText("Chain ×${e.chain}!", fieldLeft + 2.5f * fu, fieldTop + 2.3f * fu, GOLD, 0.6f * u, 1.2f)
+            texts += FloatText(s(R.string.chain_fmt, e.chain), fieldLeft + 2.5f * fu, fieldTop + 2.3f * fu, GOLD, 0.6f * u, 1.2f)
         }
     }
 
@@ -585,10 +641,27 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             // The dialog's buttons sit where the menu's buttons were: ignore a quick double tap,
             // so "Restart game" can't be confirmed by accident.
             if (clock - dialogOpenedAt < DIALOG_TAP_GUARD) return
-            when (dialogButtons.entries.firstOrNull { it.value.contains(x, y) }?.key) {
-                "restart" -> restartGame()
-                "cancel", "ok" -> dialog = null
-                else -> if (open != Dialog.RESTART) dialog = null // "coming soon" closes on any tap
+            val hit = dialogButtons.entries.firstOrNull { it.value.contains(x, y) }?.key
+            when {
+                hit == "restart" -> restartGame()
+                hit == "cancel" -> openDialog(Dialog.OPTIONS) // the restart question comes from Options
+                hit == "ok" || hit == "close" -> dialog = null
+                hit == "sound" -> {
+                    soundOn = !soundOn
+                    sounds.enabled = soundOn
+                    save()
+                }
+                hit == "name" -> editName()
+                hit == "restart_open" -> openDialog(Dialog.RESTART)
+                hit != null && hit.startsWith("lang_") -> setLanguage(hit.removePrefix("lang_"))
+                // A tap outside the card closes it ("coming soon" cards close on any tap).
+                open == Dialog.RESTART -> if (!dialogCard.contains(x, y)) openDialog(Dialog.OPTIONS)
+                open == Dialog.OPTIONS -> if (!dialogCard.contains(x, y)) dialog = null
+                else -> dialog = null
+            }
+            if (hit != null) {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                sounds.play(if (hit == "sound" || hit.startsWith("lang_")) Sounds.Fx.UI_TOGGLE else Sounds.Fx.UI_CLICK, 0.8f)
             }
             return
         }
@@ -600,7 +673,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 }
                 screen = Screen.BATTLE
             }
-            "restart" -> dialog = Dialog.RESTART
             "leaderboard" -> dialog = Dialog.LEADERBOARD
             "pvp" -> dialog = Dialog.PVP
             "options" -> dialog = Dialog.OPTIONS
@@ -608,6 +680,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (dialog != null) dialogOpenedAt = clock
         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        // Main menu buttons: a quiet click, so the menu stays calm.
+        sounds.play(Sounds.Fx.UI_MENU, MENU_CLICK_VOLUME)
     }
 
     // ================================================================ geometry
@@ -702,16 +776,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         text.textSize = 0.3f * u
         val hpWidth = text.measureText(hpText)
         text.textSize = 0.38f * u
-        val nameWidth = text.measureText(battle.opponent.name)
+        val nameWidth = text.measureText(opponentName(battle.opponent))
         val room = w - hpWidth - 0.25f * u
         val nameSize = if (nameWidth > room) 0.38f * u * room / nameWidth else 0.38f * u
-        label(c, battle.opponent.name, x, enemyTop + 0.42f * u, nameSize, Pal.TEXT, Paint.Align.LEFT)
+        label(c, opponentName(battle.opponent), x, enemyTop + 0.42f * u, nameSize, Pal.TEXT, Paint.Align.LEFT)
         label(c, hpText, x + w, enemyTop + 0.42f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
         drawHpBar(c, x, enemyTop + 0.56f * u, w, 0.26f * u, Side.ENEMY, Pal.ENEMY_HP)
 
         val chipsTop = enemyTop + 1.08f * u
         if (battle.botQueue.isEmpty()) {
-            label(c, "Training dummy: doesn't fire back", x, chipsTop + 0.42f * u, 0.27f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
+            label(c, s(R.string.dummy_info), x, chipsTop + 0.42f * u, 0.27f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
             return
         }
         val chip = 0.74f * u
@@ -1014,7 +1088,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun drawPlayerPanel(c: Canvas) {
         val x = left + 0.35f * u
         val w = gridLeft - 0.9f * u - x
-        label(c, "You", x, playerTop + 0.32f * u, 0.38f * u, Pal.TEXT, Paint.Align.LEFT)
+        // A long name shrinks so it never runs into the HP number.
+        val name = displayName()
+        text.textSize = 0.38f * u
+        val room = w - 1.0f * u
+        val nameSize = 0.38f * u * min(1f, room / max(1f, text.measureText(name)))
+        label(c, name, x, playerTop + 0.32f * u, nameSize, Pal.TEXT, Paint.Align.LEFT)
         label(c, "${ceil(shownHp[Side.PLAYER.ordinal]).toInt()}", x + w, playerTop + 0.32f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
         drawHpBar(c, x, playerTop + 0.46f * u, w, 0.26f * u, Side.PLAYER, Pal.PLAYER_HP)
 
@@ -1036,8 +1115,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.color = Pal.TEXT
         stroke.strokeWidth = 0.045f * u * k
         for (i in -1..1) c.drawLine(ix - 0.13f * u * k, iy + i * 0.1f * u * k, ix + 0.13f * u * k, iy + i * 0.1f * u * k, stroke)
-        label(c, "Menu", battleMenuButton.left + 0.6f * u * k, iy + 0.1f * u * k, 0.28f * u * k, Pal.TEXT, Paint.Align.LEFT)
-        label(c, "Level ${level + 1}", battleMenuButton.left - MENU_LABEL_GAP * u, iy + 0.13f * u * k, 0.26f * u * k, Pal.TEXT_DIM, Paint.Align.RIGHT)
+        label(c, s(R.string.menu), battleMenuButton.left + 0.6f * u * k, iy + 0.1f * u * k, 0.28f * u * k, Pal.TEXT, Paint.Align.LEFT)
+        label(c, s(R.string.level_fmt, level + 1), battleMenuButton.left - MENU_LABEL_GAP * u, iy + 0.13f * u * k, 0.26f * u * k, Pal.TEXT_DIM, Paint.Align.RIGHT)
     }
 
     /**
@@ -1065,7 +1144,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.strokeWidth = 0.06f * u
         c.drawLine(cx - s, cy - s, cx + s, cy + s, stroke)
         c.drawLine(cx + s, cy - s, cx - s, cy + s, stroke)
-        label(c, "Cancel cast", cancelCastButton.left + 0.8f * u, cy + 0.12f * u, 0.34f * u, Pal.TEXT, Paint.Align.LEFT, a)
+        label(c, s(R.string.cancel_cast), cancelCastButton.left + 0.8f * u, cy + 0.12f * u, 0.34f * u, Pal.TEXT, Paint.Align.LEFT, a)
     }
 
     // ================================================================ tutorial, menu and dialogs
@@ -1090,7 +1169,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** The tutorial's current hint, in a card between the field and your panel. */
     private fun drawTutorial(c: Canvas) {
         val t = tutorial ?: return
-        val hint = t.hint ?: return
+        val hint = t.hint?.let { str.getString(str.getIdentifier(it, "string", context.packageName)) } ?: return
         if (!battle.started || battle.winner != null) return
         val pulse = 0.5f + 0.5f * sin(clock * 5f)
         if (t.pointsAtSpells) {
@@ -1155,7 +1234,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val top = safeTop + max(0.6f * u, (availH - contentH) * 0.4f)
         val titleY = top + 1.1f * u
         label(c, "Magic Duel", cx, titleY, 1.05f * u, GOLD, Paint.Align.CENTER)
-        label(c, "A duel of the elements", cx, titleY + 0.7f * u, 0.34f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+        label(c, s(R.string.tagline), cx, titleY + 0.7f * u, 0.34f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
 
         val elements = Element.active(Rules.START_ELEMENTS)
         val gs = (1.2f * u).toInt().coerceAtLeast(8)
@@ -1175,41 +1254,142 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val bx = cx - bw / 2f
         var by = gy + gs + 1.0f * u
         val opponent = Opponents.forLevel(level)
-        val sub = "Level ${level + 1} · ${opponent.name}" + if (level == 0 && !tutorialDone) " · tutorial" else ""
+        val sub = s(R.string.level_fmt, level + 1) + " · " + opponentName(opponent) +
+            if (level == 0 && !tutorialDone) " · " + s(R.string.tutorial_tag) else ""
         val cont = RectF(bx, by, bx + bw, by + 1.25f * u)
-        drawButton(c, cont, if (played) "Continue" else "Start game", sub, primary = true, small = false)
+        drawButton(c, cont, s(if (played) R.string.continue_game else R.string.start_game), sub, primary = true, small = false)
         menuButtons["continue"] = cont
-        by = cont.bottom + 0.3f * u
-        val restart = RectF(bx, by, bx + bw, by + 0.95f * u)
-        drawButton(c, restart, "Restart game", null, primary = false, small = false)
-        menuButtons["restart"] = restart
-        by = restart.bottom + 0.55f * u
+        by = cont.bottom + 0.55f * u
         val sgap = 0.25f * u
         val sw = (bw - 2 * sgap) / 3f
-        listOf("leaderboard" to "Leaderboard", "pvp" to "PvP duel", "options" to "Options").forEachIndexed { i, (id, title) ->
+        listOf(
+            Triple("leaderboard", R.string.leaderboard, true),
+            Triple("pvp", R.string.pvp_duel, true),
+            Triple("options", R.string.options, false),
+        ).forEachIndexed { i, (id, title, soon) ->
             val r = RectF(bx + i * (sw + sgap), by, bx + i * (sw + sgap) + sw, by + 0.9f * u)
-            drawButton(c, r, title, "soon", primary = false, small = true)
+            drawButton(c, r, s(title), if (soon) s(R.string.soon) else null, primary = false, small = true)
             menuButtons[id] = r
         }
         dialog?.let { drawDialog(c, it) }
+    }
+
+    private fun openDialog(d: Dialog) {
+        dialog = d
+        dialogOpenedAt = clock
+    }
+
+    private fun setLanguage(code: String) {
+        language = code
+        str = localized(code)
+        save()
+    }
+
+    /** Your name, typed on the phone's keyboard in a small system dialog. */
+    private fun editName() {
+        val input = EditText(context).apply {
+            setText(playerName)
+            setSingleLine()
+            filters = arrayOf(InputFilter.LengthFilter(NAME_MAX))
+            hint = s(R.string.name_hint)
+            setSelection(text.length)
+        }
+        val box = android.widget.FrameLayout(context).apply {
+            val m = (0.25f * u).toInt()
+            setPadding(m, m / 2, m, 0)
+            addView(input)
+        }
+        val d = AlertDialog.Builder(context)
+            .setTitle(s(R.string.your_name))
+            .setView(box)
+            .setPositiveButton(s(R.string.save)) { _, _ ->
+                playerName = input.text.toString().trim().take(NAME_MAX)
+                save()
+            }
+            .setNegativeButton(s(R.string.cancel), null)
+            .create()
+        d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        d.show()
+        input.requestFocus()
+    }
+
+    /**
+     * Options: language, sound effects on/off, your name, and "Restart game" (with its own
+     * confirmation). Changes apply and are saved at once.
+     */
+    private fun drawOptions(c: Canvas) {
+        val w = min(width - 1.6f * u, 7f * u)
+        val pad = 0.35f * u
+        val rowH = 0.8f * u
+        val h = 1.25f * u + 0.45f * u + rowH + 0.35f * u + 2 * (rowH + 0.3f * u) + 0.25f * u + rowH + 0.35f * u + rowH + pad
+        val cx = width / 2f
+        val cy = height / 2f
+        dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        val card = dialogCard
+        fill.color = Pal.CARD
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, fill)
+        stroke.color = GOLD
+        stroke.strokeWidth = 0.05f * u
+        c.drawRoundRect(card, 0.35f * u, 0.35f * u, stroke)
+        label(c, s(R.string.options), cx, card.top + 0.85f * u, 0.5f * u, GOLD, Paint.Align.CENTER)
+        val x0 = card.left + pad
+        val x1 = card.right - pad
+        var y = card.top + 1.25f * u
+
+        // Language: one button per language, the chosen one highlighted.
+        label(c, s(R.string.language), x0, y + 0.3f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
+        y += 0.45f * u
+        val gap = 0.2f * u
+        val lw = (x1 - x0 - 2 * gap) / 3f
+        LANGUAGES.forEachIndexed { i, (code, name) ->
+            val r = RectF(x0 + i * (lw + gap), y, x0 + i * (lw + gap) + lw, y + rowH)
+            drawButton(c, r, name, null, primary = code == language, small = true)
+            dialogButtons["lang_$code"] = r
+        }
+        y += rowH + 0.35f * u
+
+        // Sound effects on/off and your name: a label on the left, a button on the right.
+        val bw = 2.6f * u
+        label(c, s(R.string.sound_effects), x0, y + rowH / 2f + 0.1f * u, 0.3f * u, Pal.TEXT, Paint.Align.LEFT)
+        val sound = RectF(x1 - bw, y, x1, y + rowH)
+        drawButton(c, sound, s(if (soundOn) R.string.on else R.string.off), null, primary = soundOn, small = true)
+        dialogButtons["sound"] = sound
+        y += rowH + 0.3f * u
+        label(c, s(R.string.your_name), x0, y + rowH / 2f + 0.1f * u, 0.3f * u, Pal.TEXT, Paint.Align.LEFT)
+        val name = RectF(x1 - bw, y, x1, y + rowH)
+        drawButton(c, name, displayName(), null, primary = false, small = true)
+        dialogButtons["name"] = name
+        y += rowH + 0.3f * u + 0.25f * u
+
+        val restart = RectF(x0, y, x1, y + rowH)
+        drawButton(c, restart, s(R.string.restart_game), null, primary = false, small = true, danger = true)
+        dialogButtons["restart_open"] = restart
+        y += rowH + 0.35f * u
+        val close = RectF(cx - 1.4f * u, y, cx + 1.4f * u, y + rowH)
+        drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+        dialogButtons["close"] = close
     }
 
     private fun drawDialog(c: Canvas, d: Dialog) {
         dialogButtons.clear()
         fill.color = withAlpha(BLACK, 170)
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+        if (d == Dialog.OPTIONS) {
+            drawOptions(c)
+            return
+        }
         val (title, message) = when (d) {
-            Dialog.RESTART -> "Restart game?" to "You go back to level 1 and the tutorial starts again. Your current progress is lost."
-            Dialog.LEADERBOARD -> "Leaderboard" to "Coming soon: compare your best level with other duellists."
-            Dialog.PVP -> "PvP duels" to "Coming soon: duel other players online."
-            Dialog.OPTIONS -> "Options" to "Coming soon: sound, vibration and more."
+            Dialog.RESTART -> s(R.string.restart_q) to s(R.string.restart_msg)
+            Dialog.LEADERBOARD -> s(R.string.leaderboard) to s(R.string.leaderboard_msg)
+            else -> s(R.string.pvp_title) to s(R.string.pvp_msg)
         }
         val w = min(width - 1.6f * u, 7f * u)
         val lines = wrap(message, 0.32f * u, w - 0.8f * u)
         val h = 1.2f * u + lines.size * 0.46f * u + 1.6f * u
         val cx = width / 2f
         val cy = height / 2f
-        val card = RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        val card = dialogCard
         fill.color = Pal.CARD
         c.drawRoundRect(card, 0.35f * u, 0.35f * u, fill)
         stroke.color = GOLD
@@ -1222,13 +1402,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val half = (w - 0.9f * u) / 2f
             val yes = RectF(card.left + 0.3f * u, bTop, card.left + 0.3f * u + half, bTop + 0.8f * u)
             val no = RectF(card.right - 0.3f * u - half, bTop, card.right - 0.3f * u, bTop + 0.8f * u)
-            drawButton(c, yes, "Restart", null, primary = false, small = true, danger = true)
-            drawButton(c, no, "Cancel", null, primary = false, small = true)
+            drawButton(c, yes, s(R.string.restart), null, primary = false, small = true, danger = true)
+            drawButton(c, no, s(R.string.cancel), null, primary = false, small = true)
             dialogButtons["restart"] = yes
             dialogButtons["cancel"] = no
         } else {
             val ok = RectF(cx - 1.4f * u, bTop, cx + 1.4f * u, bTop + 0.8f * u)
-            drawButton(c, ok, "OK", null, primary = false, small = true)
+            drawButton(c, ok, s(R.string.ok), null, primary = false, small = true)
             dialogButtons["ok"] = ok
         }
     }
@@ -1362,8 +1542,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         rect.set(left + 0.4f * u, cy - 1.1f * u, right - 0.4f * u, cy + 1.0f * u)
         fill.color = withAlpha(0xFF0B0820.toInt(), (215 * a).toInt())
         c.drawRoundRect(rect, 0.3f * u, 0.3f * u, fill)
-        label(c, battle.opponent.name, cx, cy - 0.15f * u, 0.62f * u, GOLD, Paint.Align.CENTER, a)
-        label(c, if (t < intro * 0.6f) "Get ready" else "Duel!", cx, cy + 0.62f * u, 0.42f * u, Pal.TEXT, Paint.Align.CENTER, a)
+        label(c, opponentName(battle.opponent), cx, cy - 0.15f * u, 0.62f * u, GOLD, Paint.Align.CENTER, a)
+        label(c, if (t < intro * 0.6f) s(R.string.get_ready) else s(R.string.duel), cx, cy + 0.62f * u, 0.42f * u, Pal.TEXT, Paint.Align.CENTER, a)
     }
 
     private fun drawEndOverlay(c: Canvas) {
@@ -1381,15 +1561,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.strokeWidth = 0.05f * u
         c.drawRoundRect(rect, 0.35f * u, 0.35f * u, stroke)
         val won = winner == Side.PLAYER
-        label(c, if (won) "Victory!" else "Defeated", cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
+        label(c, if (won) s(R.string.victory) else s(R.string.defeated), cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
         val subtitle = when {
-            won && tutorial != null -> "Tutorial complete! Next: ${Opponents.forLevel(level + 1).name}"
-            won -> "Next: ${Opponents.forLevel(level + 1).name}"
-            else -> "${battle.opponent.name} wins this time"
+            won && tutorial != null -> s(R.string.tutorial_complete_next, opponentName(Opponents.forLevel(level + 1)))
+            won -> s(R.string.next_fmt, opponentName(Opponents.forLevel(level + 1)))
+            else -> s(R.string.wins_fmt, opponentName(battle.opponent))
         }
         label(c, subtitle, cx, cy + 0.35f * u, 0.36f * u, Pal.TEXT, Paint.Align.CENTER, k)
         if (endTimer > TAP_DELAY) {
-            label(c, "Tap to continue", cx, cy + 1.05f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER, k * (0.6f + 0.4f * sin(clock * 4f)))
+            label(c, s(R.string.tap_continue), cx, cy + 1.05f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER, k * (0.6f + 0.4f * sin(clock * 4f)))
         }
     }
 
@@ -1397,6 +1577,18 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_LEVEL = "level"
         const val KEY_TUTORIAL_DONE = "tutorialDone"
         const val KEY_PLAYED = "played"
+        const val KEY_LANGUAGE = "language"
+        const val KEY_SOUND = "sound"
+        const val KEY_NAME = "playerName"
+
+        /** Languages in Options: code and name in that language. */
+        val LANGUAGES = listOf("en" to "English", "ru" to "Русский", "es" to "Español")
+
+        /** Longest player name. */
+        const val NAME_MAX = 14
+
+        /** Volume of the main menu buttons' click (Options buttons use 0.8). */
+        const val MENU_CLICK_VOLUME = 0.3f
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f

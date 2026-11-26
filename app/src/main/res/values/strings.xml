@@ -1,3 +1,91 @@
 <resources>
     <string name="app_name">Magic Duel</string>
+
+    <!-- Start menu -->
+    <string name="tagline">A duel of the elements</string>
+    <string name="continue_game">Continue</string>
+    <string name="start_game">Start game</string>
+    <string name="level_fmt">Level %1$d</string>
+    <string name="tutorial_tag">tutorial</string>
+    <string name="leaderboard">Leaderboard</string>
+    <string name="pvp_duel">PvP duel</string>
+    <string name="options">Options</string>
+    <string name="soon">soon</string>
+    <string name="leaderboard_msg">Coming soon: compare your best level with other duellists.</string>
+    <string name="pvp_title">PvP duels</string>
+    <string name="pvp_msg">Coming soon: duel other players online.</string>
+    <string name="ok">OK</string>
+
+    <!-- Options -->
+    <string name="language">Language</string>
+    <string name="sound_effects">Sound effects</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="your_name">Your name</string>
+    <string name="name_hint">Enter your name</string>
+    <string name="default_name">You</string>
+    <string name="save">Save</string>
+    <string name="close">Close</string>
+    <string name="restart_game">Restart game</string>
+    <string name="restart_q">Restart game?</string>
+    <string name="restart_msg">You go back to level 1 and the tutorial starts again. Your current progress is lost.</string>
+    <string name="restart">Restart</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Duel -->
+    <string name="menu">Menu</string>
+    <string name="cancel_cast">Cancel cast</string>
+    <string name="cancelled">Cancelled</string>
+    <string name="backfire">Backfire!</string>
+    <string name="pushed_out">Pushed out!</string>
+    <string name="chain_fmt">Chain ×%1$d!</string>
+    <string name="dummy_info">Training dummy: doesn\'t fire back</string>
+    <string name="get_ready">Get ready</string>
+    <string name="duel">Duel!</string>
+    <string name="victory">Victory!</string>
+    <string name="defeated">Defeated</string>
+    <string name="tutorial_complete_next">Tutorial complete! Next: %1$s</string>
+    <string name="next_fmt">Next: %1$s</string>
+    <string name="wins_fmt">%1$s wins this time</string>
+    <string name="tap_continue">Tap to continue</string>
+
+    <!-- Tutorial hints (keys come from game/Tutorial.kt) -->
+    <string name="tut_tap_spell">Tap a spell below to cast it. Its row number (1–5) is the lane it flies along.</string>
+    <string name="tut_watch_shot">Casting takes a moment. Then your spell flies down its lane and pushes that row to the far side.</string>
+    <string name="tut_make_line">Line up 3 or more of the same element in a row or a column. They explode and hit your opponent.</string>
+    <string name="tut_damage">Each exploded globe deals 5 damage. Falling globes can set off chain explosions: ×2, ×3…</string>
+    <string name="tut_backfire">That row was full, so your spell backfired and hit you. Aim at rows with space.</string>
+
+    <!-- Opponents (indices from game/Opponents.kt) -->
+    <string name="opponent_fmt">%1$s %2$s</string>
+    <string-array name="dummy_names">
+        <item>Target dummy</item>
+        <item>Oak dummy</item>
+    </string-array>
+    <string-array name="mage_titles">
+        <item>Novice</item>
+        <item>Apprentice</item>
+        <item>Initiate</item>
+        <item>Adept</item>
+        <item>Conjurer</item>
+        <item>Magus</item>
+        <item>Sorcerer</item>
+        <item>Warlock</item>
+        <item>Archmage</item>
+        <item>Grand Archmage</item>
+    </string-array>
+    <string-array name="mage_names">
+        <item>Vell</item>
+        <item>Morra</item>
+        <item>Ozrin</item>
+        <item>Tamsa</item>
+        <item>Brannoc</item>
+        <item>Ilvee</item>
+        <item>Corvath</item>
+        <item>Senna</item>
+        <item>Druven</item>
+        <item>Ysolde</item>
+        <item>Harrow</item>
+        <item>Quill</item>
+    </string-array>
 </resources>

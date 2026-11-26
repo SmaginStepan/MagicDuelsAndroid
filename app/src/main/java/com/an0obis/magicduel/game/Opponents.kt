@@ -18,6 +18,13 @@ data class Opponent(
     val idleTime: Float = 2.5f,
     val elementCount: Int = Rules.START_ELEMENTS,
     val robeColor: Int = 0xFF8E2C3A.toInt(),
+    /**
+     * For showing the name in the player's language: a dummy's index, or a mage's title and name
+     * indices (string arrays dummy_names, mage_titles, mage_names); [name] is the English name.
+     */
+    val dummyIndex: Int = -1,
+    val titleIndex: Int = -1,
+    val nameIndex: Int = -1,
 ) {
     val fires: Boolean get() = kind == AvatarKind.MAGE
 }
@@ -29,8 +36,8 @@ data class Opponent(
  */
 object Opponents {
     private val dummies = listOf(
-        Opponent("Target dummy", AvatarKind.DUMMY, hp = 40),
-        Opponent("Oak dummy", AvatarKind.DUMMY, hp = 80),
+        Opponent("Target dummy", AvatarKind.DUMMY, hp = 40, dummyIndex = 0),
+        Opponent("Oak dummy", AvatarKind.DUMMY, hp = 80, dummyIndex = 1),
     )
 
     /** The first mage: 10× slower than the original first bot (which cast 1.5 s and waited 2.8 s). */
@@ -68,6 +75,8 @@ object Opponents {
             castTime = max(MIN_CAST_TIME, FIRST_CAST_TIME * speed),
             idleTime = max(MIN_IDLE_TIME, FIRST_IDLE_TIME * speed),
             robeColor = robes[k % robes.size].toInt(),
+            titleIndex = min(k / 2, titles.lastIndex),
+            nameIndex = k % names.size,
         )
     }
 }

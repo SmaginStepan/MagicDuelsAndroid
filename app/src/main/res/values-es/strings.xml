@@ -1,0 +1,86 @@
+<resources>
+    <string name="app_name">Magic Duel</string>
+
+    <string name="tagline">Un duelo de los elementos</string>
+    <string name="continue_game">Continuar</string>
+    <string name="start_game">Empezar</string>
+    <string name="level_fmt">Nivel %1$d</string>
+    <string name="tutorial_tag">tutorial</string>
+    <string name="leaderboard">Clasificación</string>
+    <string name="pvp_duel">Duelo PvP</string>
+    <string name="options">Opciones</string>
+    <string name="soon">pronto</string>
+    <string name="leaderboard_msg">Próximamente: compara tu mejor nivel con otros duelistas.</string>
+    <string name="pvp_title">Duelos PvP</string>
+    <string name="pvp_msg">Próximamente: duelos en línea contra otros jugadores.</string>
+    <string name="ok">OK</string>
+
+    <string name="language">Idioma</string>
+    <string name="sound_effects">Efectos de sonido</string>
+    <string name="on">Sí</string>
+    <string name="off">No</string>
+    <string name="your_name">Tu nombre</string>
+    <string name="name_hint">Escribe tu nombre</string>
+    <string name="default_name">Tú</string>
+    <string name="save">Guardar</string>
+    <string name="close">Cerrar</string>
+    <string name="restart_game">Reiniciar juego</string>
+    <string name="restart_q">¿Reiniciar el juego?</string>
+    <string name="restart_msg">Volverás al nivel 1 y el tutorial empezará de nuevo. Perderás tu progreso actual.</string>
+    <string name="restart">Reiniciar</string>
+    <string name="cancel">Cancelar</string>
+
+    <string name="menu">Menú</string>
+    <string name="cancel_cast">Cancelar</string>
+    <string name="cancelled">Cancelado</string>
+    <string name="backfire">¡Rebote!</string>
+    <string name="pushed_out">¡Expulsada!</string>
+    <string name="chain_fmt">¡Cadena ×%1$d!</string>
+    <string name="dummy_info">Muñeco de práctica: no contraataca</string>
+    <string name="get_ready">Prepárate</string>
+    <string name="duel">¡Duelo!</string>
+    <string name="victory">¡Victoria!</string>
+    <string name="defeated">Derrota</string>
+    <string name="tutorial_complete_next">¡Tutorial completado! Siguiente: %1$s</string>
+    <string name="next_fmt">Siguiente: %1$s</string>
+    <string name="wins_fmt">%1$s gana esta vez</string>
+    <string name="tap_continue">Toca para continuar</string>
+
+    <string name="tut_tap_spell">Toca un hechizo de abajo para lanzarlo. Su número de fila (1–5) es el carril por el que vuela.</string>
+    <string name="tut_watch_shot">Lanzar un hechizo lleva un momento. Luego vuela por su carril y empuja esa fila hacia el otro lado.</string>
+    <string name="tut_make_line">Alinea 3 o más esferas del mismo elemento en una fila o columna. Explotan y golpean a tu rival.</string>
+    <string name="tut_damage">Cada esfera que explota hace 5 de daño. Las esferas que caen pueden provocar explosiones en cadena: ×2, ×3…</string>
+    <string name="tut_backfire">Esa fila estaba llena, así que tu hechizo rebotó y te golpeó. Apunta a filas con espacio.</string>
+
+    <string name="opponent_fmt">%1$s %2$s</string>
+    <string-array name="dummy_names">
+        <item>Muñeco de tiro</item>
+        <item>Muñeco de roble</item>
+    </string-array>
+    <string-array name="mage_titles">
+        <item>Novato</item>
+        <item>Aprendiz</item>
+        <item>Iniciado</item>
+        <item>Adepto</item>
+        <item>Conjurador</item>
+        <item>Mago</item>
+        <item>Hechicero</item>
+        <item>Brujo</item>
+        <item>Archimago</item>
+        <item>Gran archimago</item>
+    </string-array>
+    <string-array name="mage_names">
+        <item>Vell</item>
+        <item>Morra</item>
+        <item>Ozrin</item>
+        <item>Tamsa</item>
+        <item>Brannoc</item>
+        <item>Ilvee</item>
+        <item>Corvath</item>
+        <item>Senna</item>
+        <item>Druven</item>
+        <item>Ysolde</item>
+        <item>Harrow</item>
+        <item>Quill</item>
+    </string-array>
+</resources>

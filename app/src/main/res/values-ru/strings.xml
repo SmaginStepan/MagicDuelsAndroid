@@ -1,0 +1,86 @@
+<resources>
+    <string name="app_name">Magic Duel</string>
+
+    <string name="tagline">Дуэль стихий</string>
+    <string name="continue_game">Продолжить</string>
+    <string name="start_game">Начать игру</string>
+    <string name="level_fmt">Уровень %1$d</string>
+    <string name="tutorial_tag">обучение</string>
+    <string name="leaderboard">Рейтинг</string>
+    <string name="pvp_duel">PvP-дуэль</string>
+    <string name="options">Настройки</string>
+    <string name="soon">скоро</string>
+    <string name="leaderboard_msg">Скоро: сравните свой лучший уровень с другими дуэлянтами.</string>
+    <string name="pvp_title">PvP-дуэли</string>
+    <string name="pvp_msg">Скоро: дуэли с другими игроками онлайн.</string>
+    <string name="ok">OK</string>
+
+    <string name="language">Язык</string>
+    <string name="sound_effects">Звуковые эффекты</string>
+    <string name="on">Вкл</string>
+    <string name="off">Выкл</string>
+    <string name="your_name">Ваше имя</string>
+    <string name="name_hint">Введите имя</string>
+    <string name="default_name">Вы</string>
+    <string name="save">Сохранить</string>
+    <string name="close">Закрыть</string>
+    <string name="restart_game">Начать заново</string>
+    <string name="restart_q">Начать заново?</string>
+    <string name="restart_msg">Вы вернётесь на уровень 1, и обучение начнётся снова. Текущий прогресс будет потерян.</string>
+    <string name="restart">Заново</string>
+    <string name="cancel">Отмена</string>
+
+    <string name="menu">Меню</string>
+    <string name="cancel_cast">Отменить</string>
+    <string name="cancelled">Отменено</string>
+    <string name="backfire">Отдача!</string>
+    <string name="pushed_out">Вытолкнута!</string>
+    <string name="chain_fmt">Цепь ×%1$d!</string>
+    <string name="dummy_info">Тренировочное чучело: не отвечает</string>
+    <string name="get_ready">Приготовьтесь</string>
+    <string name="duel">Дуэль!</string>
+    <string name="victory">Победа!</string>
+    <string name="defeated">Поражение</string>
+    <string name="tutorial_complete_next">Обучение пройдено! Далее: %1$s</string>
+    <string name="next_fmt">Далее: %1$s</string>
+    <string name="wins_fmt">%1$s побеждает</string>
+    <string name="tap_continue">Нажмите, чтобы продолжить</string>
+
+    <string name="tut_tap_spell">Нажмите на заклинание внизу, чтобы произнести его. Номер его ряда (1–5) — это дорожка, по которой оно полетит.</string>
+    <string name="tut_watch_shot">Заклинание произносится не сразу. Затем оно летит по своей дорожке и сдвигает этот ряд к дальнему краю.</string>
+    <string name="tut_make_line">Соберите 3 или больше сфер одной стихии в ряд или столбец. Они взорвутся и ударят по противнику.</string>
+    <string name="tut_damage">Каждая взорванная сфера наносит 5 урона. Падающие сферы могут вызвать цепные взрывы: ×2, ×3…</string>
+    <string name="tut_backfire">Этот ряд был заполнен, поэтому заклинание отразилось и попало в вас. Цельтесь в ряды со свободным местом.</string>
+
+    <string name="opponent_fmt">%1$s %2$s</string>
+    <string-array name="dummy_names">
+        <item>Чучело-мишень</item>
+        <item>Дубовое чучело</item>
+    </string-array>
+    <string-array name="mage_titles">
+        <item>Новичок</item>
+        <item>Подмастерье</item>
+        <item>Посвящённый</item>
+        <item>Адепт</item>
+        <item>Заклинатель</item>
+        <item>Маг</item>
+        <item>Чародей</item>
+        <item>Колдун</item>
+        <item>Архимаг</item>
+        <item>Великий архимаг</item>
+    </string-array>
+    <string-array name="mage_names">
+        <item>Велл</item>
+        <item>Морра</item>
+        <item>Озрин</item>
+        <item>Тамса</item>
+        <item>Браннок</item>
+        <item>Илви</item>
+        <item>Корват</item>
+        <item>Сенна</item>
+        <item>Друвен</item>
+        <item>Изольда</item>
+        <item>Харроу</item>
+        <item>Квилл</item>
+    </string-array>
+</resources>
