@@ -63,12 +63,19 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         var landed = false
     }
 
+    /**
+     * Magic of [element] flying from a burst globe at ([x0], [y0]) to ([x1], [y1]) along a curve bent
+     * through ([cx], [cy]); air and lightning zap there in a straight line.
+     */
     private class Spark(
         val x0: Float, val y0: Float, val cx: Float, val cy: Float, val x1: Float, val y1: Float,
-        val color: Int, val delay: Float, val duration: Float, val hit: HitGroup?,
+        val element: Element, val delay: Float, val duration: Float, val hit: HitGroup?, val seed: Int,
     ) {
         var t = 0f
     }
+
+    /** An effect to start [t] seconds from now. */
+    private class Later(var t: Float, val run: () -> Unit)
 
     private class FloatText(val text: String, val x: Float, val y: Float, val color: Int, val size: Float, val duration: Float = 1.1f) {
         var t = 0f
@@ -134,6 +141,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     // ---- effects ----
     private val sparks = ArrayList<Spark>()
+    private val later = ArrayList<Later>()
+    private val effects = Effects()
+    private val sparkPos = PointF()
+    private val sparkTail = FloatArray(Effects.TAIL_POINTS * 2)
     private val texts = ArrayList<FloatText>()
     private val rings = ArrayList<Ring>()
     private val bolts = ArrayList<Bolt>()
@@ -221,6 +232,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val availH = (h - safeTop - safeBottom).toFloat()
         val contentUnits = 5f + 2f * FLIGHT_ZONE
         u = min(w / contentUnits, availH / 16f)
+        effects.u = u
         val contentW = u * contentUnits
         left = (w - contentW) / 2f
         right = left + contentW
@@ -251,7 +263,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     private fun resetEffects() {
-        sparks.clear(); texts.clear(); rings.clear(); bolts.clear()
+        sparks.clear(); texts.clear(); rings.clear(); bolts.clear(); later.clear(); effects.clear()
         endTimer = 0f
         tappedRow = -1
         tappedCol = -1
@@ -317,20 +329,37 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         tutorial?.update(dt)
         queueShift = max(0f, queueShift - dt / QUEUE_SHIFT_TIME)
 
+        // Copy first: a delayed effect may schedule another one.
+        for (l in later.toList()) {
+            l.t -= dt
+            if (l.t <= 0f) {
+                later.remove(l)
+                l.run()
+            }
+        }
         val it = sparks.iterator()
         while (it.hasNext()) {
             val s = it.next()
             s.t += dt
             if (s.t >= s.delay + s.duration) {
+                // The first piece of magic to arrive deals the damage; each one bursts on impact.
+                var first = false
                 s.hit?.let { group ->
                     if (!group.landed) {
                         group.landed = true
+                        first = true
                         onHit(group.target, group.damage)
                     }
                 }
+                if (effects.travelsAsBolt(s.element)) effects.zap(s.element, s.x0, s.y0, s.x1, s.y1)
+                effects.impact(s.element, s.x1, s.y1, if (first) 1f else 0.45f)
                 it.remove()
+            } else if (s.t >= s.delay) {
+                sparkAt(s, sparkPos)
+                effects.trail(s.element, sparkPos.x, sparkPos.y, dt)
             }
         }
+        effects.update(dt)
         texts.removeAll { t -> t.t += dt; t.t >= t.duration }
         rings.removeAll { r -> r.t += dt; r.t >= r.duration }
         bolts.removeAll { b -> b.t += dt; b.t >= BOLT_TIME }
@@ -387,34 +416,53 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 mix(art.color(e.element), WHITE, 0.65f), 0.25f * u, 0.8f * u, 0.35f,
             )
             is BattleEvent.Backfired -> texts += FloatText("Backfire!", endX(e.side), laneY(e.lane) - 0.45f * u, Pal.ENEMY_HP, 0.38f * u, 0.9f)
-            is BattleEvent.BackfireHit -> onHit(e.side, e.damage)
+            is BattleEvent.BackfireHit -> {
+                onHit(e.side, e.damage)
+                chest(e.side).let { effects.impact(e.element, it.x, it.y, 0.8f) }
+            }
             is BattleEvent.Matched -> spawnMatch(e)
             is BattleEvent.SpellsRefilled -> e.cells.forEach { tilePop[it.row][it.col] = 0f }
             is BattleEvent.PushedOut -> texts += FloatText(
                 "Pushed out!", cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
             )
-            is BattleEvent.PushOutHit -> onHit(e.target, e.damage)
+            is BattleEvent.PushOutHit -> {
+                onHit(e.target, e.damage)
+                chest(e.target).let { effects.impact(e.element, it.x, it.y, 0.8f) }
+            }
             is BattleEvent.GameOver -> Unit
         }
     }
 
+    /**
+     * Matched globes burst in their element's way (flames, splash, rocks, lightning, smoke), then
+     * their magic flies at the target: fireballs, water orbs, hurled rocks; air zaps as lightning.
+     */
     private fun spawnMatch(e: BattleEvent.Matched) {
         val target = chest(e.target)
         val group = HitGroup(e.target, e.damage)
+        val spread = 0.3f * u
         e.cells.forEachIndexed { i, cell ->
             val x = cellX(cell.col.toFloat())
             val y = cellY(cell.row.toFloat())
-            val col = art.color(e.elements[i])
-            rings += Ring(x, y, col, 0.2f * u, 0.9f * u, 0.4f)
-            val dx = target.x - x
-            val dy = target.y - y
-            val len = max(1f, hypot(dx, dy))
-            repeat(2) { k ->
-                val bend = (if ((i + k) % 2 == 0) 1f else -1f) * (1.2f + Random.nextFloat()) * u
-                val mx = (x + target.x) / 2f - dy / len * bend
-                val my = (y + target.y) / 2f + dx / len * bend
-                val delay = Rules.POP_TIME * 0.6f + i * 0.03f + k * 0.05f
-                sparks += Spark(x, y, mx, my, target.x, target.y, col, delay, 0.55f + Random.nextFloat() * 0.15f, group)
+            val el = e.elements[i]
+            // The burst comes as the swelling globe fades (see drawGlobes).
+            later += Later(Rules.POP_TIME * 0.45f + i * 0.02f) { effects.explode(el, x, y) }
+            val bolt = effects.travelsAsBolt(el)
+            repeat(if (el == Element.EARTH) 2 else 1) { k ->
+                val tx = target.x + (Random.nextFloat() * 2f - 1f) * spread
+                val ty = target.y + (Random.nextFloat() * 2f - 1f) * spread
+                val delay = Rules.POP_TIME * 0.6f + i * 0.05f + k * 0.07f
+                if (bolt) {
+                    sparks += Spark(x, y, (x + tx) / 2f, (y + ty) / 2f, tx, ty, el, delay, ZAP_TIME, group, Random.nextInt())
+                } else {
+                    val dx = tx - x
+                    val dy = ty - y
+                    val len = max(1f, hypot(dx, dy))
+                    val bend = (if ((i + k) % 2 == 0) 1f else -1f) * (1.2f + Random.nextFloat()) * u
+                    val mx = (x + tx) / 2f - dy / len * bend
+                    val my = (y + ty) / 2f + dx / len * bend
+                    sparks += Spark(x, y, mx, my, tx, ty, el, delay, 0.55f + Random.nextFloat() * 0.15f, group, Random.nextInt())
+                }
             }
         }
         if (e.chain >= 2) {
@@ -1125,18 +1173,31 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
     }
 
+    /**
+     * Where spark [s] is now (or [ago] seconds ago): speeding up along its curve, or (lightning)
+     * zapping straight at a steady pace.
+     */
+    private fun sparkAt(s: Spark, out: PointF, ago: Float = 0f) {
+        val t = ((s.t - ago - s.delay) / s.duration).coerceIn(0f, 1f)
+        val e = if (effects.travelsAsBolt(s.element)) t else t * t
+        val a = 1f - e
+        out.set(
+            a * a * s.x0 + 2f * a * e * s.cx + e * e * s.x1,
+            a * a * s.y0 + 2f * a * e * s.cy + e * e * s.y1,
+        )
+    }
+
+    /** Element particles (bursts, trails, impacts), then the magic in flight on top. */
     private fun drawSparks(c: Canvas) {
+        effects.draw(c)
         for (s in sparks) {
             if (s.t < s.delay) continue
-            val t = ((s.t - s.delay) / s.duration).coerceIn(0f, 1f)
-            val e = t * t
-            val a = 1f - e
-            val x = a * a * s.x0 + 2f * a * e * s.cx + e * e * s.x1
-            val y = a * a * s.y0 + 2f * a * e * s.cy + e * e * s.y1
-            fill.color = withAlpha(s.color, 90)
-            c.drawCircle(x, y, 0.2f * u, fill)
-            fill.color = mix(s.color, WHITE, 0.5f)
-            c.drawCircle(x, y, 0.08f * u, fill)
+            for (i in 0 until Effects.TAIL_POINTS) {
+                sparkAt(s, sparkPos, i * Effects.TAIL_STEP)
+                sparkTail[i * 2] = sparkPos.x
+                sparkTail[i * 2 + 1] = sparkPos.y
+            }
+            effects.drawTravel(c, s.element, s.x0, s.y0, sparkTail, s.t - s.delay, s.seed)
         }
     }
 
@@ -1209,6 +1270,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val MENU_LABEL_GAP = 0.5f
         const val STAR_COUNT = 70
         const val BOLT_TIME = 0.22f
+
+        /** How long air (and lightning) magic takes to zap from a burst globe to its target. */
+        const val ZAP_TIME = 0.14f
         const val TAP_DELAY = 1.5f
         const val DEFEAT_TILT = 32f
 

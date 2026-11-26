@@ -80,3 +80,23 @@ now also uses the ping-pong of its steady first 1.8 s, like shadow.
 - `resize-orbs.ps1` — sprites → 256 px game copies.
 - `cut-fx.ps1` — projectile and button originals → sprites, game copies and preview.
 - `anim-sheets.ps1` — animation frames → sprite sheets for the game.
+
+## Element effects (drawn in code)
+
+Explosions and hits are not Midjourney art: `app/src/main/java/com/an0obis/magicduel/ui/Effects.kt`
+draws them with particles, sized in field cells.
+
+| Element | Globe bursts | Magic flies to the target | On hit |
+|---|---|---|---|
+| Fire | flames and rising embers | comet-tailed fireball with a hot core, shedding embers | burst of flame |
+| Water | splash of droplets falling with gravity, ripple rings | comet-tailed water orb (a flying droplet), dripping | splash |
+| Earth | spinning rock chunks, dust, green motes | two hurled rocks per globe, shedding pebbles and dust | rocks shatter |
+| Air | white-blue lightning and sparks | a jagged bolt zaps straight to the target | electric burst |
+| Lightning (later) | as air, in yellow | yellow bolt | yellow electric burst |
+| Shadow (later) | violet flash, dark and light violet smoke, sparks | comet-tailed violet orb, trailing smoke | smoke puff |
+
+The comet tails follow the curved flight path and taper from a round head; they are short at
+launch and stretch as the magic speeds up (`Effects.drawTravel`, positions from `GameView.sparkAt`).
+
+The first piece of magic to arrive deals the damage (full-size impact); the rest burst smaller.
+Backfires and globes pushed out of a full row also burst in their element when they hit.

@@ -95,7 +95,7 @@ sealed interface BattleEvent {
     data class Launched(val side: Side, val element: Element, val lane: Int) : BattleEvent
     data class Landed(val side: Side, val element: Element, val row: Int, val col: Int) : BattleEvent
     data class Backfired(val side: Side, val lane: Int) : BattleEvent
-    data class BackfireHit(val side: Side, val damage: Int) : BattleEvent
+    data class BackfireHit(val side: Side, val damage: Int, val element: Element) : BattleEvent
     data class Matched(
         val cells: List<Cell>,
         val elements: List<Element>,
@@ -109,7 +109,7 @@ sealed interface BattleEvent {
     data class PushedOut(val by: Side, val lane: Int) : BattleEvent
 
     /** The globe pushed out of the field hit [target]. */
-    data class PushOutHit(val target: Side, val damage: Int) : BattleEvent
+    data class PushOutHit(val target: Side, val damage: Int, val element: Element) : BattleEvent
     data class GameOver(val winner: Side) : BattleEvent
 }
 
@@ -265,7 +265,7 @@ class Battle(
                     p.bounceT += dt
                     if (p.bounceT >= Rules.BACKFIRE_TIME) {
                         p.state = Projectile.State.DONE
-                        events += BattleEvent.BackfireHit(p.owner, Rules.BACKFIRE_DAMAGE)
+                        events += BattleEvent.BackfireHit(p.owner, Rules.BACKFIRE_DAMAGE, p.element)
                         hurt(p.owner, Rules.BACKFIRE_DAMAGE)
                     }
                 }
@@ -274,7 +274,7 @@ class Battle(
                     if (p.bounceT >= Rules.BACKFIRE_TIME) {
                         p.state = Projectile.State.DONE
                         val target = p.owner.opponent
-                        events += BattleEvent.PushOutHit(target, Rules.PUSH_OUT_DAMAGE)
+                        events += BattleEvent.PushOutHit(target, Rules.PUSH_OUT_DAMAGE, p.element)
                         hurt(target, Rules.PUSH_OUT_DAMAGE)
                     }
                 }

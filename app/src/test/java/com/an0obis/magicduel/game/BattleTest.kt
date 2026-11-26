@@ -198,7 +198,7 @@ class BattleTest {
             events += b.drainEvents()
         }
         assertEquals(1, events.count { it == BattleEvent.PushedOut(Side.ENEMY, shot.lane) })
-        assertEquals(1, events.count { it == BattleEvent.PushOutHit(Side.PLAYER, Rules.PUSH_OUT_DAMAGE) })
+        assertEquals(1, events.count { it is BattleEvent.PushOutHit && it.target == Side.PLAYER && it.damage == Rules.PUSH_OUT_DAMAGE })
         assertTrue(events.none { it is BattleEvent.Backfired || it is BattleEvent.BackfireHit })
         assertEquals(100, b.enemy.hp)
         assertTrue(b.player.hp <= Rules.PLAYER_HP - Rules.PUSH_OUT_DAMAGE)
