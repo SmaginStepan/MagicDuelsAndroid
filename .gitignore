@@ -15,3 +15,5 @@
 /art/*/anim/*/frame_*.png
 /art/*/anim/frame_*.png
 /art/*/anim/idle.png
+/art/*/anim/*/*/frame_*.png
+/art/*/freeze/*/frame_*.png

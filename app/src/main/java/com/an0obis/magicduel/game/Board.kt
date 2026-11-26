@@ -4,8 +4,15 @@ import kotlin.random.Random
 
 data class Cell(val row: Int, val col: Int)
 
-/** A crystal globe on the field. Draw positions are in cell units and are animated by [Battle]. */
-class Globe(val element: Element) {
+/** Range of the drawing-only `look` numbers of globes and projectiles. */
+internal const val LOOKS = 1 shl 16
+
+/**
+ * A crystal globe on the field. Draw positions are in cell units and are animated by [Battle].
+ * [look] only affects drawing: it picks the animation variant and where in its loop the globe starts.
+ * A shot keeps the look of the projectile it was, so it doesn't change when it lands.
+ */
+class Globe(val element: Element, val look: Int = Random.nextInt(LOOKS)) {
     var drawCol = 0f
     var drawRow = 0f
     internal var fromCol = 0f

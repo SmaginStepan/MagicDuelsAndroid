@@ -2,6 +2,7 @@ package com.an0obis.magicduel.game
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -18,7 +19,7 @@ class BattleTest {
     }
 
     /** Enough time for the player's shot into [lane] to be cast, fly and fully resolve. */
-    private fun shotTime(lane: Int) = Rules.PLAYER_CAST_TIME + Rules.FLIGHT_TIME[lane] + 2.5f
+    private fun shotTime(lane: Int) = Rules.castTime(Rules.PLAYER_CAST_TIME, lane) + Rules.FLIGHT_TIME + 2.5f
 
     @Test
     fun takingASpellRefreshesItsRowAndColumn() {
@@ -34,14 +35,106 @@ class BattleTest {
     }
 
     @Test
-    fun castingTakesFixedTimeAndBlocksAnotherCast() {
+    fun castingTakesItsLanesTimeAndBlocksAnotherCast() {
         val b = Battle(dummy, seed = 3, introTime = 0f)
         assertTrue(b.tryCast(0, 0))
         assertFalse(b.tryCast(1, 1))
-        run(b, Rules.PLAYER_CAST_TIME + 0.05f)
+        run(b, Rules.castTime(Rules.PLAYER_CAST_TIME, 0) - 0.1f)
+        assertTrue(b.player.isCasting) // the top lane takes the longest
+        run(b, 0.15f)
         assertFalse(b.player.isCasting)
         assertEquals(1, b.projectiles.size)
         assertTrue(b.tryCast(1, 1))
+    }
+
+    @Test
+    fun fastShotsKeepTheTimeFromCastToFieldPerLane() {
+        // Before: a 2.7 s cast, then a slow flight of LANE_TIME seconds. Now the cast is longer
+        // and the flight short, but a shot still reaches the field at the same moment.
+        for (lane in 0 until Rules.ROWS) {
+            for (base in listOf(Rules.PLAYER_CAST_TIME, 0.8f, 15f)) {
+                assertEquals(base + Rules.LANE_TIME[lane], Rules.castTime(base, lane) + Rules.FLIGHT_TIME, 0.0001f)
+            }
+            if (lane > 0) assertTrue(Rules.castTime(2.7f, lane) < Rules.castTime(2.7f, lane - 1))
+        }
+        assertTrue(Rules.FLIGHT_TIME < 0.2f)
+    }
+
+    @Test
+    fun biggerFieldAndSlowerShotsAreWorkedOutTogether() {
+        // The field is 25% larger: 5 cells of 1.25 layout units = 6.25 units. The whole width stays
+        // 9.75 units, so each side lane is 1.75 units and a shot flies 1.75 - 0.5 - 0.625 = 0.625
+        // units (half a field cell) before it reaches the field.
+        val fieldUnits = 5f * Rules.FIELD_CELL_UNITS
+        val laneUnits = (9.75f - fieldUnits) / 2f
+        val flightUnits = laneUnits - 0.5f - 0.5f * Rules.FIELD_CELL_UNITS
+        assertEquals(6.25f, fieldUnits, 0.0001f)
+        assertEquals(flightUnits, Rules.FLIGHT_CELLS * Rules.FIELD_CELL_UNITS, 0.0001f)
+        // On screen shots are 25% slower than the 9 units a second before, in and out of the field.
+        assertEquals(9f * 0.75f, Rules.SHOT_SPEED * Rules.FIELD_CELL_UNITS, 0.0001f)
+        assertEquals(flightUnits / Rules.SHOT_SCREEN_SPEED, Rules.FLIGHT_TIME, 0.0001f)
+        // So the player's casts are 9.45 s into lane 1 down to 4.39 s into lane 5.
+        assertEquals(9.447f, Rules.castTime(Rules.PLAYER_CAST_TIME, 0), 0.001f)
+        assertEquals(4.392f, Rules.castTime(Rules.PLAYER_CAST_TIME, 4), 0.001f)
+    }
+
+    @Test
+    fun laneCastTimesSpreadHalfAgainAsWideAsTheOriginalFlights() {
+        val original = floatArrayOf(6.0f, 5.16f, 4.32f, 3.47f, 2.63f)
+        // Lane 1 vs lane 5: 50% more difference than before, around the same middle lane.
+        assertEquals(1.5f * (original[0] - original[4]), Rules.LANE_TIME[0] - Rules.LANE_TIME[4], 0.001f)
+        assertEquals(original[2], Rules.LANE_TIME[2], 0.0001f)
+        for (lane in 0 until Rules.ROWS) {
+            assertEquals(original[2] + 1.5f * (original[lane] - original[2]), Rules.LANE_TIME[lane], 0.001f)
+            if (lane > 0) assertTrue(Rules.LANE_TIME[lane] < Rules.LANE_TIME[lane - 1])
+        }
+        // Even the fastest bot (0.8 s base) still needs a moment to cast into the fastest lane.
+        assertTrue(Rules.castTime(0.8f, 4) > 2f)
+    }
+
+    @Test
+    fun aShotFreezesInPlaceBeforeItFalls() {
+        // Lane 2 has one globe at the right edge, held up by a full column; the shot stops next to it,
+        // above three empty cells.
+        val board = Board.parse(".....", "....F", "....W", "....E", "....A")
+        val b = Battle(dummy, seed = 3, startBoard = board, introTime = 0f)
+        assertTrue(b.tryCast(1, 0))
+        val arrives = Rules.castTime(Rules.PLAYER_CAST_TIME, 1) + Rules.FLIGHT_TIME
+        val slide = 4f / Rules.SHOT_SPEED // from one cell outside the field to column 3
+        run(b, arrives + slide + 0.1f)
+        // Landed and freezing where it stopped: nothing has fallen yet.
+        assertEquals(Battle.Phase.FREEZE, b.phase)
+        assertTrue(b.board[1, 3] != null && !b.board[1, 3]!!.inFlight)
+        assertNull(b.board[4, 3])
+        run(b, Rules.FREEZE_TIME - 0.2f)
+        assertTrue(b.board[1, 3] != null) // still frozen in place
+        // Once frozen it falls as a globe to the bottom.
+        run(b, 0.2f + Rules.FALL_TIME + 0.1f)
+        assertNull(b.board[1, 3])
+        assertTrue(b.board[4, 3] != null)
+        assertTrue(b.board[4, 3]!!.freeze == 0f)
+    }
+
+    @Test
+    fun aShotThatStaysPutDoesNotWaitForItsFreeze() {
+        // The shot stops on top of a globe: the field settles straight away, as before.
+        val board = Board.parse(".....", ".....", ".....", ".....", "....F")
+        val b = Battle(dummy, seed = 3, startBoard = board, introTime = 0f)
+        assertTrue(b.tryCast(4, 0))
+        run(b, Rules.castTime(Rules.PLAYER_CAST_TIME, 4) + Rules.FLIGHT_TIME + 4f / Rules.SHOT_SPEED + 0.1f)
+        assertEquals(Battle.Phase.IDLE, b.phase)
+        assertTrue(b.board[4, 3]!!.freeze > 0f) // still freezing (drawn only)
+    }
+
+    @Test
+    fun aShotReachesTheFieldAtTheSameMomentAsBefore() {
+        val b = Battle(dummy, seed = 3, introTime = 0f)
+        assertTrue(b.tryCast(3, 0))
+        val before = Rules.PLAYER_CAST_TIME + Rules.LANE_TIME[3]
+        run(b, before - 0.1f)
+        assertTrue(b.drainEvents().none { it is BattleEvent.Landed })
+        run(b, 0.2f + 5f / Rules.SHOT_SPEED)
+        assertTrue(b.drainEvents().any { it is BattleEvent.Landed && it.side == Side.PLAYER })
     }
 
     @Test
@@ -136,7 +229,8 @@ class BattleTest {
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(mage, seed = 9, startBoard = board, introTime = 0f)
         val shot = b.botQueue[0]
-        run(b, 30f + mage.castTime + Rules.FLIGHT_TIME[shot.lane] + 1.5f)
+        // Slide across (up to 6 cells), freeze in place, then fall to the bottom row.
+        run(b, 30f + Rules.castTime(mage.castTime, shot.lane) + Rules.FLIGHT_TIME + 6f / Rules.SHOT_SPEED + Rules.FREEZE_TIME + 1f)
         assertEquals("${Board.code(shot.element)}....", board.describe()[4])
     }
 
@@ -148,7 +242,7 @@ class BattleTest {
         var before = b.botQueue.toList()
         var launches = 0
         var t = 0f
-        while (launches < 7 && t < 30f) {
+        while (launches < 7 && t < 80f) {
             b.update(0.02f)
             t += 0.02f
             for (e in b.drainEvents()) {
@@ -168,15 +262,16 @@ class BattleTest {
     fun botPlanIsRandomNotARepeatingLoop() {
         val mage = Opponent("Test mage", AvatarKind.MAGE, hp = 100, castTime = 0.2f, idleTime = 0.2f)
         val b = Battle(mage, seed = 11, introTime = 0f)
-        val fired = mutableListOf<Shot>()
+        // Everything the bot plans: its first queue, then the shot added at the tail after each cast.
+        // (The duel itself may end before 20 shots are fired: the idle player gets pushed out.)
+        val fired = b.botQueue.toMutableList()
         var t = 0f
-        while (fired.size < 20 && t < 60f) {
+        while (fired.size < 20 && t < 200f && b.winner == null) {
             b.update(0.02f)
             t += 0.02f
-            b.drainEvents().filterIsInstance<BattleEvent.Launched>().filter { it.side == Side.ENEMY }
-                .forEach { fired += Shot(it.element, it.lane) }
+            if (b.drainEvents().any { it is BattleEvent.Launched && it.side == Side.ENEMY }) fired += b.botQueue.last()
         }
-        assertEquals(20, fired.size)
+        assertTrue(fired.size >= 20)
         // A 5-shot loop would repeat exactly every 5 shots.
         assertTrue((5 until 20).any { fired[it] != fired[it - 5] })
     }
@@ -192,7 +287,7 @@ class BattleTest {
         val shot = b.botQueue[0]
         val events = mutableListOf<BattleEvent>()
         var t = 0f
-        while (t < 20f + mage.castTime + Rules.FLIGHT_TIME[shot.lane] + 2f) {
+        while (t < 20f + Rules.castTime(mage.castTime, shot.lane) + Rules.FLIGHT_TIME + 2f) {
             b.update(0.02f)
             t += 0.02f
             events += b.drainEvents()

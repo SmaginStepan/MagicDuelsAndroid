@@ -21,11 +21,13 @@ import com.an0obis.magicduel.game.AvatarKind
 import com.an0obis.magicduel.game.Battle
 import com.an0obis.magicduel.game.BattleEvent
 import com.an0obis.magicduel.game.Element
+import com.an0obis.magicduel.game.Globe
 import com.an0obis.magicduel.game.Opponents
 import com.an0obis.magicduel.game.Projectile
 import com.an0obis.magicduel.game.Rules
 import com.an0obis.magicduel.game.Side
 import com.an0obis.magicduel.game.Tutorial
+import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.hypot
@@ -77,6 +79,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** An effect to start [t] seconds from now. */
     private class Later(var t: Float, val run: () -> Unit)
 
+    /** A Midjourney hit burst playing on [side]'s mage ([t] seconds in, [HIT_TIME] long), mirrored if [flip]. */
+    private class HitBurst(val side: Side, val element: Element, val flip: Boolean, val spin: Float) { var t = 0f }
+
     private class FloatText(val text: String, val x: Float, val y: Float, val color: Int, val size: Float, val duration: Float = 1.1f) {
         var t = 0f
     }
@@ -124,6 +129,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var right = 0f
     private var fieldLeft = 0f
     private var fieldTop = 0f
+
+    /** Size of a field cell in pixels: [FIELD_SCALE] layout units. */
+    private var fu = 1f
     private var enemyTop = 0f
     private var gridLeft = 0f
     private var gridTop = 0f
@@ -145,6 +153,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private val effects = Effects()
     private val sparkPos = PointF()
     private val sparkTail = FloatArray(Effects.TAIL_POINTS * 2)
+    private val freezing = ArrayList<Globe>()
+    private val bursts = ArrayList<HitBurst>()
     private val texts = ArrayList<FloatText>()
     private val rings = ArrayList<Ring>()
     private val bolts = ArrayList<Bolt>()
@@ -230,9 +240,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private fun layoutFor(w: Int, h: Int) {
         val availH = (h - safeTop - safeBottom).toFloat()
-        val contentUnits = 5f + 2f * FLIGHT_ZONE
-        u = min(w / contentUnits, availH / 16f)
-        effects.u = u
+        val contentUnits = 5f * FIELD_SCALE + 2f * FLIGHT_ZONE
+        u = min(w / contentUnits, availH / 17.25f)
+        fu = u * FIELD_SCALE
+        effects.u = fu
         val contentW = u * contentUnits
         left = (w - contentW) / 2f
         right = left + contentW
@@ -248,7 +259,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         playerTop = gridTop - 0.95f * u
 
         val enemyBottom = enemyTop + 2.45f * u
-        fieldTop = (enemyBottom + playerTop) / 2f - 2.5f * u
+        fieldTop = (enemyBottom + playerTop) / 2f - 2.5f * fu
 
         playerH = 3.7f * u
         playerX = left + (gridLeft - 0.7f * u - left) / 2f
@@ -260,10 +271,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dashed.pathEffect = DashPathEffect(floatArrayOf(0.12f * u, 0.14f * u), 0f)
         sky.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), Pal.SKY_TOP, Pal.SKY_BOTTOM, Shader.TileMode.CLAMP)
         text.setShadowLayer(0.08f * u, 0f, 0.03f * u, BLACK)
+        // Cut out the animation frames at the duel's sizes in the background (see Art.preload).
+        art.preload(
+            Element.entries, (0.9f * fu).toInt().coerceAtLeast(8), (SHOT_HEIGHT * fu).toInt().coerceAtLeast(8), freezeHeight(),
+            listOf(hitSize(Side.PLAYER), hitSize(Side.ENEMY)),
+        )
     }
 
     private fun resetEffects() {
-        sparks.clear(); texts.clear(); rings.clear(); bolts.clear(); later.clear(); effects.clear()
+        sparks.clear(); texts.clear(); rings.clear(); bolts.clear(); later.clear(); effects.clear(); bursts.clear()
         endTimer = 0f
         tappedRow = -1
         tappedCol = -1
@@ -349,6 +365,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                         group.landed = true
                         first = true
                         onHit(group.target, group.damage)
+                        hitBurst(group.target, s.element)
                     }
                 }
                 if (effects.travelsAsBolt(s.element)) effects.zap(s.element, s.x0, s.y0, s.x1, s.y1)
@@ -359,6 +376,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 effects.trail(s.element, sparkPos.x, sparkPos.y, dt)
             }
         }
+        shedFromShots(dt)
+        bursts.removeAll { b -> b.t += dt; b.t >= HIT_TIME }
         effects.update(dt)
         texts.removeAll { t -> t.t += dt; t.t >= t.duration }
         rings.removeAll { r -> r.t += dt; r.t >= r.duration }
@@ -411,13 +430,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 afterglow[e.side.ordinal] = 1f
                 lastCastColor[e.side.ordinal] = art.color(e.element)
             }
-            is BattleEvent.Landed -> rings += Ring(
+            // Elements with a freeze clip show the shot freezing (drawFreeze); the others get a frost ring.
+            is BattleEvent.Landed -> if (art.freezeFrames(e.element, freezeHeight()) == null) rings += Ring(
                 cellX(e.col.toFloat()), cellY(e.row.toFloat()),
-                mix(art.color(e.element), WHITE, 0.65f), 0.25f * u, 0.8f * u, 0.35f,
+                mix(art.color(e.element), WHITE, 0.65f), 0.25f * fu, 0.8f * fu, 0.35f,
             )
             is BattleEvent.Backfired -> texts += FloatText("Backfire!", endX(e.side), laneY(e.lane) - 0.45f * u, Pal.ENEMY_HP, 0.38f * u, 0.9f)
             is BattleEvent.BackfireHit -> {
                 onHit(e.side, e.damage)
+                hitBurst(e.side, e.element)
                 chest(e.side).let { effects.impact(e.element, it.x, it.y, 0.8f) }
             }
             is BattleEvent.Matched -> spawnMatch(e)
@@ -427,6 +448,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             )
             is BattleEvent.PushOutHit -> {
                 onHit(e.target, e.damage)
+                hitBurst(e.target, e.element)
                 chest(e.target).let { effects.impact(e.element, it.x, it.y, 0.8f) }
             }
             is BattleEvent.GameOver -> Unit
@@ -466,8 +488,46 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             }
         }
         if (e.chain >= 2) {
-            texts += FloatText("Chain ×${e.chain}!", fieldLeft + 2.5f * u, fieldTop + 2.3f * u, GOLD, 0.6f * u, 1.2f)
+            texts += FloatText("Chain ×${e.chain}!", fieldLeft + 2.5f * fu, fieldTop + 2.3f * fu, GOLD, 0.6f * u, 1.2f)
         }
+    }
+
+    /**
+     * Magic of [element] hits [side]: its Midjourney burst (a fiery blast, a splash, shattering rock,
+     * a lightning strike) plays over the mage, randomly turned and mirrored so repeated hits differ.
+     */
+    private fun hitBurst(side: Side, element: Element) {
+        if (art.hitFrames(element, hitSize(side)) == null) return
+        bursts += HitBurst(side, element, Random.nextBoolean(), Random.nextFloat() * 50f - 25f)
+    }
+
+    /** Size of a hit burst on [side]'s mage, in pixels: a bit wider than the mage is tall for the small enemy. */
+    private fun hitSize(side: Side): Int =
+        ((if (side == Side.PLAYER) playerH * 0.85f else enemyH * 1.1f)).toInt().coerceAtLeast(8)
+
+    /**
+     * Hit bursts over the mages: the clip starts at the blast's peak, so it pops in (growing from
+     * 55% over the first tenth), keeps spreading outward (30% more by the end) and fades out over
+     * the last third.
+     */
+    private fun drawHitBursts(c: Canvas) {
+        for (b in bursts) {
+            val size = hitSize(b.side)
+            val frames = art.hitFrames(b.element, size) ?: continue
+            val k = (b.t / HIT_TIME).coerceIn(0f, 1f)
+            val bmp = frames[min(frames.size - 1, (k * frames.size).toInt())]
+            val at = chest(b.side)
+            val grow = (0.55f + 0.45f * easeOut(min(1f, k / 0.1f))) * (1f + 0.3f * k)
+            c.save()
+            c.translate(at.x, at.y)
+            c.rotate(b.spin)
+            c.scale(if (b.flip) -grow else grow, grow)
+            rect.set(-size / 2f, -size / 2f, size / 2f, size / 2f)
+            bitmapPaint.alpha = (255 * (1f - smooth01((k - 0.67f) / 0.33f))).toInt()
+            c.drawBitmap(bmp, null, rect, bitmapPaint)
+            c.restore()
+        }
+        bitmapPaint.alpha = 255
     }
 
     private fun onHit(side: Side, damage: Int) {
@@ -553,12 +613,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     // ================================================================ geometry
 
-    private fun cellX(col: Float) = fieldLeft + (col + 0.5f) * u
-    private fun cellY(row: Float) = fieldTop + (row + 0.5f) * u
+    private fun cellX(col: Float) = fieldLeft + (col + 0.5f) * fu
+    private fun cellY(row: Float) = fieldTop + (row + 0.5f) * fu
     private fun laneY(lane: Int) = cellY(lane.toFloat())
     private fun startX(side: Side) = if (side == Side.PLAYER) left + 0.5f * u else right - 0.5f * u
     /** Where a shot reaches the field: one cell outside the edge, where it starts sliding in. */
-    private fun endX(side: Side) = if (side == Side.PLAYER) fieldLeft - 0.5f * u else fieldLeft + 5.5f * u
+    private fun endX(side: Side) = if (side == Side.PLAYER) fieldLeft - 0.5f * fu else fieldLeft + 5.5f * fu
     private fun chest(side: Side) =
         if (side == Side.PLAYER) PointF(playerX, playerFoot - playerH * 0.5f) else PointF(enemyX, enemyFoot - enemyH * 0.5f)
 
@@ -587,6 +647,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawSpellGrid(c)
         drawBolts(c)
         drawSparks(c)
+        drawHitBursts(c)
         drawTexts(c)
         drawTutorial(c)
         drawBanner(c)
@@ -703,8 +764,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     private fun drawField(c: Canvas) {
-        val fr = fieldLeft + 5f * u
-        val fb = fieldTop + 5f * u
+        val fr = fieldLeft + 5f * fu
+        val fb = fieldTop + 5f * fu
         dashed.color = withAlpha(WHITE, 34)
         dashed.strokeWidth = 0.035f * u
         for (lane in 0 until Rules.ROWS) {
@@ -727,6 +788,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             fill.color = withAlpha(col, (25 + 50 * caster.castProgress * pulse).toInt())
             c.drawRoundRect(rect, 0.2f * u, 0.2f * u, fill)
             drawChevrons(c, (x0 + x1) / 2f, y, side == Side.PLAYER, col, caster.castProgress)
+            drawCountdown(c, (x0 + x1) / 2f, y + 0.4f * u, col, caster.castTime * (1f - caster.castProgress) + Rules.FLIGHT_TIME)
         }
         rect.set(fieldLeft - 0.14f * u, fieldTop - 0.14f * u, fr + 0.14f * u, fb + 0.14f * u)
         fill.color = Pal.PANEL
@@ -736,15 +798,28 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
         fill.color = withAlpha(WHITE, 12)
         for (r in 0 until Rules.ROWS) for (col in 0 until Rules.COLS) {
-            c.drawCircle(cellX(col.toFloat()), cellY(r.toFloat()), 0.36f * u, fill)
+            c.drawCircle(cellX(col.toFloat()), cellY(r.toFloat()), 0.36f * fu, fill)
         }
     }
 
-    private fun drawChevrons(c: Canvas, cx: Float, cy: Float, pointRight: Boolean, color: Int, k: Float) {
+    /**
+     * The seconds [eta] until a shot reaches the field: a small, quiet number at the bottom edge
+     * ([bottom]) of the glowing lane strip, in a soft tint of the element's colour. No background,
+     * border or animation, so it informs without pulling the eye.
+     */
+    private fun drawCountdown(c: Canvas, cx: Float, bottom: Float, color: Int, eta: Float) {
+        val size = 0.21f * u
+        label(
+            c, String.format(Locale.US, "%.1f", eta), cx, bottom - 0.06f * u, size,
+            mix(color, WHITE, 0.55f), Paint.Align.CENTER, 0.75f,
+        )
+    }
+
+    private fun drawChevrons(c: Canvas, cx: Float, cy: Float, pointRight: Boolean, color: Int, k: Float, alpha: Float = 1f) {
         val d = if (pointRight) 1f else -1f
         val spacing = 0.3f * u
         val drift = ((clock * 1.5f) % 1f) * spacing
-        stroke.color = withAlpha(color, (120 + 135 * k).toInt())
+        stroke.color = withAlpha(color, ((120 + 135 * k) * alpha).toInt())
         stroke.strokeWidth = 0.06f * u
         for (i in -1..1) {
             val x = cx + (i * spacing + drift - spacing / 2f) * d
@@ -757,32 +832,75 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     private fun drawGlobes(c: Canvas) {
-        val size = (0.9f * u).toInt().coerceAtLeast(8)
+        val size = (0.9f * fu).toInt().coerceAtLeast(8)
         val popping = battle.phase == Battle.Phase.POP
+        freezing.clear()
         battle.board.forEachGlobe { _, _, g ->
             if (g.inFlight) {
                 // Still a projectile sliding through the row; it freezes into a globe when it stops.
-                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), if (g.headingRight) 1f else -1f, 0f, g)
+                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), if (g.headingRight) 1f else -1f, 0f, g.look)
                 return@forEachGlobe
             }
             var scale = 1f
-            var alpha = 255
+            var alpha = 1f
+            val hasFreeze = g.freeze > 0f && art.freezeFrames(g.element, freezeHeight()) != null
             if (g.popping && popping) {
                 val p = battle.phaseProgress
                 scale = 1f + 0.45f * p
-                alpha = (255 * (1f - p)).toInt()
+                alpha = 1f - p
+            } else if (hasFreeze) {
+                // The shot is freezing into this globe (drawn on top, below): the globe shows through
+                // only at the end of the clip.
+                alpha = smooth01((1f - g.freeze - 0.6f) / 0.4f)
+                freezing += g
             }
             val x = cellX(g.drawCol)
             val y = cellY(g.drawRow)
             val half = size * scale / 2f
             rect.set(x - half, y - half, x + half, y + half)
-            bitmapPaint.alpha = alpha
-            c.drawBitmap(art.globe(g.element, size, animFrame(g)), null, rect, bitmapPaint)
-            if (g.freeze > 0f) {
+            bitmapPaint.alpha = (255 * alpha).toInt()
+            if (alpha > 0f) c.drawBitmap(art.globe(g.element, size, animFrame(g.look), g.look), null, rect, bitmapPaint)
+            if (g.freeze > 0f && !hasFreeze) {
+                // No freeze animation for this element: a white flash fades off the new globe.
                 fill.color = withAlpha(0xFFE8F6FF.toInt(), (190 * g.freeze).toInt())
                 c.drawCircle(x, y, half * 0.9f, fill)
             }
         }
+        // Freezing shots go over the other globes: the icy tail reaches back along the row.
+        for (g in freezing) drawFreeze(c, g)
+        bitmapPaint.alpha = 255
+    }
+
+    /** Height of the freeze clip; its globe matches the field's globes (see [Art.freezeFrames]). */
+    private fun freezeHeight() = ((0.9f * fu).toInt().coerceAtLeast(8) / Art.FREEZE_GLOBE).toInt()
+
+    /**
+     * The Midjourney clip of shot [g] freezing into its crystal globe: frost runs over the comet, its
+     * tail shatters into ice dust and the head hardens into the globe. Played once over
+     * [Rules.FREEZE_TIME]; it fades out at the end as the real globe takes over. The sheet is built so
+     * the comet starts at the flying comet's head size and grows smoothly into the globe in place
+     * (tools/art/anim-sheets.ps1); at first the live comet is drawn over it and fades out.
+     */
+    private fun drawFreeze(c: Canvas, g: Globe) {
+        val frames = art.freezeFrames(g.element, freezeHeight()) ?: return
+        val t = 1f - g.freeze
+        val bmp = frames[min(frames.size - 1, (t * frames.size).toInt())]
+        val h = bmp.height.toFloat()
+        val w = bmp.width.toFloat()
+        val x = cellX(g.drawCol)
+        val y = cellY(g.drawRow)
+        c.save()
+        c.translate(x, y)
+        // The clip's globe sits half a frame height in from its right edge; enemy shots face left.
+        if (!g.headingRight) c.scale(-1f, 1f)
+        rect.set(h / 2f - w, -h / 2f, h / 2f, h / 2f)
+        bitmapPaint.alpha = (255 * smooth01(t / 0.15f) * (1f - smooth01((t - 0.8f) / 0.2f))).toInt()
+        c.drawBitmap(bmp, null, rect, bitmapPaint)
+        c.restore()
+        // The live comet keeps moving at first and fades out as the frost takes over (the clip starts
+        // at the flying comet's head size, see tools/art/anim-sheets.ps1).
+        val live = 1f - smooth01(t / 0.35f)
+        if (live > 0f) drawShot(c, g.element, x, y, if (g.headingRight) 1f else -1f, 0f, g.look, live)
         bitmapPaint.alpha = 255
     }
 
@@ -801,12 +919,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * that way. No extra motion is added here — the only animation is the projectile's own loop,
      * whose head is locked in place, so the head moves exactly as the caller moves it.
      */
-    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, seed: Any?, alpha: Float = 1f) {
-        val bmp = art.projectile(e, (SHOT_HEIGHT * u).toInt().coerceAtLeast(8), animFrame(seed))
+    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, look: Int, alpha: Float = 1f) {
+        val bmp = art.projectile(e, (SHOT_HEIGHT * fu).toInt().coerceAtLeast(8), animFrame(look, COMET_FPS), look)
         val h = bmp.height.toFloat()
         val w = bmp.width.toFloat()
-        // The head sits at the right end of the image, about half its height in from the edge.
-        val headInset = h * 0.5f
+        // The head's centre sits SHOT_HEAD_INSET image heights in from the right edge (room for spray ahead).
+        val headInset = h * SHOT_HEAD_INSET
         c.save()
         c.translate(x, y)
         val degrees = if (dx < 0f) {
@@ -824,11 +942,37 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The current frame of a looping Midjourney animation. Each object ([seed]) starts at its own
-     * point in the loop, so neighbouring globes don't flicker in sync.
+     * The current frame of a looping Midjourney animation. Each globe or shot starts at its own point
+     * in the loop (from its [look]), so neighbouring globes don't flicker in sync.
      */
-    private fun animFrame(seed: Any?): Int =
-        (clock * ANIM_FPS).toInt() + (if (seed == null) 0 else System.identityHashCode(seed) % (Art.ANIM_COLS * Art.ANIM_ROWS))
+    private fun animFrame(look: Int, fps: Float = ANIM_FPS): Int = (clock * fps).toInt() + look % (Art.ANIM_COLS * Art.ANIM_ROWS)
+
+    /**
+     * Comets in the lanes (and sliding into the field) shed bits of their element just behind the
+     * head: embers, drops, pebbles and dust, electric sparks. Drawn with the other effects.
+     */
+    private fun shedFromShots(dt: Float) {
+        val behind = 0.3f * fu
+        for (p in battle.projectiles) {
+            val dir = if (p.owner.fromLeft) 1f else -1f
+            val laneY = laneY(p.lane)
+            val x = when (p.state) {
+                Projectile.State.FLYING -> startX(p.owner) + (endX(p.owner) - startX(p.owner)) * p.progress
+                Projectile.State.WAITING -> endX(p.owner)
+                else -> continue
+            }
+            effects.trail(p.element, x - dir * behind, laneY, dt * SHED_RATE)
+            effects.crackle(p.element, x, laneY, dir, dt, CRACKLE_RATE)
+            effects.windStreaks(p.element, x, laneY, dir, dt, WIND_RATE)
+        }
+        battle.board.forEachGlobe { _, _, g ->
+            if (!g.inFlight) return@forEachGlobe
+            val dir = if (g.headingRight) 1f else -1f
+            effects.trail(g.element, cellX(g.drawCol) - dir * behind, cellY(g.drawRow), dt * SHED_RATE)
+            effects.crackle(g.element, cellX(g.drawCol), cellY(g.drawRow), dir, dt, CRACKLE_RATE)
+            effects.windStreaks(g.element, cellX(g.drawCol), cellY(g.drawRow), dir, dt, WIND_RATE)
+        }
+    }
 
     private fun drawProjectiles(c: Canvas) {
         for (p in battle.projectiles) {
@@ -840,17 +984,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             // its only animation (it fades in during the first moment, without moving or growing).
             when (p.state) {
                 Projectile.State.FLYING -> drawShot(
-                    c, p.element, sx + (ex - sx) * p.progress, laneY, dir, 0f, p, min(1f, p.flown / SHOT_FADE_IN),
+                    c, p.element, sx + (ex - sx) * p.progress, laneY, dir, 0f, p.look, min(1f, p.flown / SHOT_FADE_IN),
                 )
                 // The field is still moving: the shot holds at its edge until it can slide in.
-                Projectile.State.WAITING -> drawShot(c, p.element, ex, laneY, dir, 0f, p)
+                Projectile.State.WAITING -> drawShot(c, p.element, ex, laneY, dir, 0f, p.look)
                 Projectile.State.BOUNCING -> {
                     // Backfire: the shot turns around and flies straight at its own caster.
                     val target = chest(p.owner)
                     val t = p.bounceProgress
                     drawShot(
                         c, p.element, ex + (target.x - ex) * t, laneY + (target.y - laneY) * t,
-                        target.x - ex, target.y - laneY, p,
+                        target.x - ex, target.y - laneY, p.look,
                     )
                 }
                 Projectile.State.EJECTED -> {
@@ -860,9 +1004,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val t = p.bounceProgress
                     val x = from + (target.x - from) * t
                     val y = laneY + (target.y - laneY) * t
-                    val half = (0.9f * u).toInt().coerceAtLeast(8) / 2f
+                    val half = (0.9f * fu).toInt().coerceAtLeast(8) / 2f
                     rect.set(x - half, y - half, x + half, y + half)
-                    c.drawBitmap(art.globe(p.element, (2 * half).toInt(), animFrame(p)), null, rect, bitmapPaint)
+                    c.drawBitmap(art.globe(p.element, (2 * half).toInt(), animFrame(p.look), p.look), null, rect, bitmapPaint)
                 }
                 Projectile.State.DONE -> Unit
             }
@@ -1024,7 +1168,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         for (e in elements) {
             val bob = sin(clock * 2f + e.ordinal) * 0.07f * u
             rect.set(gx, gy + bob, gx + gs, gy + gs + bob)
-            c.drawBitmap(art.globe(e, gs, animFrame(e)), null, rect, bitmapPaint)
+            c.drawBitmap(art.globe(e, gs, animFrame(e.ordinal * 5)), null, rect, bitmapPaint)
             gx += gs + gap
         }
 
@@ -1215,8 +1359,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val intro = battle.introTime
         if (t > intro + 0.5f) return
         val a = if (t < intro) 1f else 1f - (t - intro) / 0.5f
-        val cx = fieldLeft + 2.5f * u
-        val cy = fieldTop + 2.5f * u
+        val cx = fieldLeft + 2.5f * fu
+        val cy = fieldTop + 2.5f * fu
         rect.set(left + 0.4f * u, cy - 1.1f * u, right - 0.4f * u, cy + 1.0f * u)
         fill.color = withAlpha(0xFF0B0820.toInt(), (215 * a).toInt())
         c.drawRoundRect(rect, 0.3f * u, 0.3f * u, fill)
@@ -1231,7 +1375,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         fill.color = withAlpha(BLACK, (150 * k).toInt())
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         val cx = width / 2f
-        val cy = fieldTop + 2.5f * u
+        val cy = fieldTop + 2.5f * fu
         rect.set(left + 0.6f * u, cy - 1.6f * u, right - 0.6f * u, cy + 1.6f * u)
         fill.color = withAlpha(Pal.CARD, (240 * k).toInt())
         c.drawRoundRect(rect, 0.35f * u, 0.35f * u, fill)
@@ -1277,18 +1421,43 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val DEFEAT_TILT = 32f
 
         /** Height of a flying projectile image, in field cells. */
-        const val SHOT_HEIGHT = 1.0f
+        const val SHOT_HEIGHT = 1.35f
+
+        /** Where the comet's head centre is in its image, in image heights in from the right (tools/art/anim-sheets.ps1 HeadInset). */
+        const val SHOT_HEAD_INSET = 0.75f
+
+        /** Comets shed element particles at this share of the match-magic trail rate (see shedFromShots). */
+        const val SHED_RATE = 0.6f
+
+        /** Lightning arcs a second flickering around each air (and lightning) comet. */
+        const val CRACKLE_RATE = 9f
+
+        /** Wind streaks a second peeling off each air comet. */
+        const val WIND_RATE = 18f
+
+        /** Comet loops play faster than the globes' loops, so their tails stream and crackle. */
+        const val COMET_FPS = 16f
+
+        /** How long a Midjourney hit burst plays on a mage (16 frames). */
+        const val HIT_TIME = 0.75f
 
         /** A new shot fades in over this time (seconds) at the start of its lane. */
-        const val SHOT_FADE_IN = 0.15f
+        const val SHOT_FADE_IN = 0.05f
 
         /** Playback speed of the Midjourney loops: 24 frames at 10 fps ≈ a 2.4 s cycle. */
         const val ANIM_FPS = 10f
 
         /**
-         * Width of each side flight zone in field cells. Shots fly from 0.5 cells inside the
-         * screen edge to 0.5 cells before the field, so the flight path is FLIGHT_ZONE - 1 cells.
+         * Size of a field cell in layout units [u]: the field is 25% larger than the 5 units it used
+         * to be, while the mages, panels and spell grid keep their size. Globes and comets scale with it.
          */
-        const val FLIGHT_ZONE = 2.375f
+        const val FIELD_SCALE = Rules.FIELD_CELL_UNITS
+
+        /**
+         * Width of each side flight zone in layout units. Shots fly from 0.5 units inside the screen
+         * edge to half a field cell before the field: Rules.FLIGHT_CELLS field cells. The whole width,
+         * 5 field cells plus both zones, stays 9.75 units as before the field grew (1.75 + 6.25 + 1.75).
+         */
+        const val FLIGHT_ZONE = 0.5f + FIELD_SCALE * (Rules.FLIGHT_CELLS + 0.5f)
     }
 }

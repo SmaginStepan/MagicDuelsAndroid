@@ -23,7 +23,7 @@ import kotlin.random.Random
  * air (and lightning) = electric bolts, shadow = smoke. Sizes scale with [u], the field cell size.
  */
 class Effects {
-    private enum class Kind { FLAME, EMBER, DROP, RIPPLE, ROCK, DUST, FLASH, BOLT, SMOKE }
+    private enum class Kind { FLAME, EMBER, DROP, RIPPLE, ROCK, DUST, FLASH, BOLT, SMOKE, WISP }
 
     private class P(
         val kind: Kind,
@@ -183,6 +183,33 @@ class Effects {
         }
     }
 
+    /**
+     * Short lightning arcs flicker around an air or lightning comet whose head is at ([x], [y]), flying
+     * in direction [dir] (1 = right, -1 = left): about [rate] arcs a second, along the first cell of
+     * the tail, snapping back and outwards. Other elements get none.
+     */
+    fun crackle(e: Element, x: Float, y: Float, dir: Float, dt: Float, rate: Float) {
+        if (!travelsAsBolt(e) || rnd.nextFloat() >= dt * rate) return
+        val sx = x - dir * r(0.05f, 1.1f) * u
+        val sy = y + r(-0.15f, 0.15f) * u
+        val a = (if (dir > 0f) PI.toFloat() else 0f) + r(-1.2f, 1.2f)
+        val len = r(0.25f, 0.6f) * u
+        ps += P(Kind.BOLT, sx, sy, 0f, 0f, r(0.08f, 0.16f), 0.55f, boltGlow(e), x2 = sx + cos(a) * len, y2 = sy + sin(a) * len)
+    }
+
+    /**
+     * Streaks of wind peel off an air comet's head at ([x], [y]) (flying in direction [dir]) and stream
+     * back along its tail, about [rate] a second, so the comet visibly rushes even when small.
+     */
+    fun windStreaks(e: Element, x: Float, y: Float, dir: Float, dt: Float, rate: Float) {
+        if (e != Element.AIR || rnd.nextFloat() >= dt * rate) return
+        ps += P(
+            Kind.WISP, x - dir * r(0f, 0.35f) * u, y + r(-0.28f, 0.28f) * u, -dir * r(0.6f, 1.4f) * u, r(-0.12f, 0.12f) * u,
+            r(0.25f, 0.45f), r(0.025f, 0.04f) * u, C.AIR_GLOW,
+            x2 = -dir * r(0.35f, 0.75f) * u, y2 = r(-0.14f, 0.14f) * u,
+        )
+    }
+
     /** The full lightning bolt from ([x0], [y0]) to ([x1], [y1]) lingers and flickers out after it struck. */
     fun zap(e: Element, x0: Float, y0: Float, x1: Float, y1: Float) {
         ps += P(Kind.BOLT, x0, y0, 0f, 0f, 0.22f, 1f, boltGlow(e), x2 = x1, y2 = y1)
@@ -219,7 +246,11 @@ class Effects {
                     else -> Unit
                 }
                 Element.SHADOW -> ps += P(Kind.SMOKE, x, y, r(-0.2f, 0.2f) * u, r(-0.3f, 0f) * u, r(0.3f, 0.5f), r(0.07f, 0.11f) * u, C.SHADOW_LIGHT)
-                Element.AIR, Element.LIGHTNING -> Unit
+                // Now and then a crackling spark jumps off.
+                Element.AIR, Element.LIGHTNING -> if (rnd.nextInt(3) == 0) {
+                    val a = dir(); val sp = r(0.8f, 1.8f) * u
+                    ps += P(Kind.EMBER, x, y, cos(a) * sp, sin(a) * sp, r(0.12f, 0.25f), 0.022f * u, boltGlow(e), drag = 5f)
+                }
             }
         }
     }
@@ -305,6 +336,20 @@ class Effects {
                 Kind.BOLT -> {
                     val a = (1f - k) * (if (rnd.nextInt(5) == 0) 0.35f else 1f)
                     drawBoltLine(c, p.x, p.y, p.x2, p.y2, p.color, a, p.size)
+                }
+                Kind.WISP -> {
+                    // A curved streak of wind that stretches out behind the comet as it fades.
+                    val a = min(1f, k / 0.15f) * (1f - k)
+                    val ex = p.x + p.x2 * (0.6f + 0.4f * k)
+                    path.reset()
+                    path.moveTo(p.x, p.y)
+                    path.quadTo((p.x + ex) / 2f, p.y + p.y2, ex, p.y + p.y2 * 0.3f)
+                    stroke.color = withAlpha(p.color, (90 * a).toInt())
+                    stroke.strokeWidth = p.size * 2.4f
+                    c.drawPath(path, stroke)
+                    stroke.color = withAlpha(mix(p.color, WHITE, 0.6f), (210 * a).toInt())
+                    stroke.strokeWidth = p.size * (1f - 0.5f * k)
+                    c.drawPath(path, stroke)
                 }
             }
         }

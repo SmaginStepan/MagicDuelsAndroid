@@ -22,8 +22,11 @@ enum class Side {
 
 data class Shot(val element: Element, val lane: Int)
 
-/** A duellist: hit points plus the spell currently being cast (casting takes a fixed time). */
-class Caster(val side: Side, val maxHp: Int, val castTime: Float) {
+/**
+ * A duellist: hit points plus the spell currently being cast. Casting into a lane takes
+ * [Rules.castTime] of the caster's [baseCastTime]: longer for the top lanes.
+ */
+class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float) {
     var hp = maxHp
         private set
     var castElement: Element? = null
@@ -32,6 +35,10 @@ class Caster(val side: Side, val maxHp: Int, val castTime: Float) {
         private set
     private var castT = 0f
 
+    /** How long the current cast takes in total (it depends on the lane). */
+    var castTime = 0f
+        private set
+
     val isCasting: Boolean get() = castElement != null
     val castProgress: Float get() = if (isCasting) (castT / castTime).coerceIn(0f, 1f) else 0f
 
@@ -39,6 +46,7 @@ class Caster(val side: Side, val maxHp: Int, val castTime: Float) {
         castElement = element
         castLane = lane
         castT = 0f
+        castTime = Rules.castTime(baseCastTime, lane)
     }
 
     internal fun cancelCast() {
@@ -67,6 +75,8 @@ class Projectile internal constructor(
     val element: Element,
     val lane: Int,
     val flightTime: Float,
+    /** Drawing only: picks the animation variant and loop phase; the globe it becomes keeps it. */
+    val look: Int = Random.nextInt(LOOKS),
 ) {
     /**
      * FLYING to the field, WAITING at its edge while the field is busy, BOUNCING back at its own
@@ -123,7 +133,11 @@ class Battle(
     startBoard: Board? = null,
     val introTime: Float = 1.6f,
 ) {
-    enum class Phase { IDLE, PUSH, FALL, POP }
+    /**
+     * What the field is doing. FREEZE: a shot that stopped above an empty cell freezes into its globe
+     * in place first ([Rules.FREEZE_TIME]); only then does it fall.
+     */
+    enum class Phase { IDLE, PUSH, FREEZE, FALL, POP }
 
     private val random = Random(seed)
     val elements: List<Element> = Element.active(opponent.elementCount)
@@ -228,7 +242,7 @@ class Battle(
     }
 
     private fun launch(side: Side, shot: Shot) {
-        flying += Projectile(side, shot.element, shot.lane, Rules.FLIGHT_TIME[shot.lane])
+        flying += Projectile(side, shot.element, shot.lane, Rules.FLIGHT_TIME)
         events += BattleEvent.Launched(side, shot.element, shot.lane)
     }
 
@@ -300,7 +314,7 @@ class Battle(
         val fromLeft = p.owner.fromLeft
         snapshotPositions()
         // The shot enters one cell outside the field edge and slides until it is blocked.
-        val shot = Globe(p.element).apply {
+        val shot = Globe(p.element, p.look).apply {
             fromCol = if (fromLeft) -1f else board.cols.toFloat()
             fromRow = p.lane.toFloat()
             drawCol = fromCol
@@ -311,7 +325,7 @@ class Battle(
         val col = if (full) {
             // Full row, but this caster pushes anyway: the far globe flies out at the opponent.
             val out = board.pushThroughFullRow(p.lane, fromLeft, shot)
-            flying += Projectile(p.owner, out.element, p.lane, 0f).apply { state = Projectile.State.EJECTED }
+            flying += Projectile(p.owner, out.element, p.lane, 0f, out.look).apply { state = Projectile.State.EJECTED }
             events += BattleEvent.PushedOut(p.owner, p.lane)
             if (fromLeft) 0 else board.cols - 1
         } else {
@@ -323,7 +337,7 @@ class Battle(
         pushFromLeft = fromLeft
         resolvingSide = p.owner
         chain = 0
-        startPhase(Phase.PUSH, max(0.1f, abs(col - shot.fromCol) / Rules.PUSH_SPEED))
+        startPhase(Phase.PUSH, max(0.1f, abs(col - shot.fromCol) / Rules.SHOT_SPEED))
     }
 
     /** The sliding shot stops and freezes into a crystal globe. */
@@ -349,9 +363,13 @@ class Battle(
         if (phaseTime < phaseDuration) return
         when (phase) {
             Phase.PUSH -> {
+                // A shot that stopped over an empty cell freezes in place before it falls, so it never
+                // drops in comet form; otherwise the field settles at once.
+                val falls = pushRow + 1 < board.rows && board[pushRow + 1, pushCol] == null
                 freezeShot()
-                settle()
+                if (falls) startPhase(Phase.FREEZE, Rules.FREEZE_TIME) else settle()
             }
+            Phase.FREEZE -> settle()
             Phase.FALL -> checkMatches()
             Phase.POP -> {
                 board.remove(popping)
@@ -423,7 +441,7 @@ class Battle(
                     pushFromLeft -> max(g.fromCol, s + (c - pushCol))
                     else -> min(g.fromCol, s + (c - pushCol))
                 }
-                if (g.freeze > 0f) g.freeze = (g.freeze - dt * 2.5f).coerceAtLeast(0f)
+                if (g.freeze > 0f) g.freeze = (g.freeze - dt / Rules.FREEZE_TIME).coerceAtLeast(0f)
             }
             return
         }
@@ -437,7 +455,7 @@ class Battle(
                 g.drawCol = c.toFloat()
                 g.drawRow = r.toFloat()
             }
-            if (g.freeze > 0f) g.freeze = (g.freeze - dt * 2.5f).coerceAtLeast(0f)
+            if (g.freeze > 0f) g.freeze = (g.freeze - dt / Rules.FREEZE_TIME).coerceAtLeast(0f)
         }
     }
 }
