@@ -201,6 +201,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** "Cancel cast" button above your mage; only shown (and tappable) while you are casting. */
     private val cancelCastButton = RectF()
 
+    /** The × on the tutorial hint (empty while no hint is shown), and the hints closed with it this duel. */
+    private val hintCloseButton = RectF()
+    private val closedHints = HashSet<String>()
+
     /** 1 right after the bot's queue moved up by one spell, easing to 0 (the chips slide left). */
     private var queueShift = 0f
 
@@ -416,6 +420,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         tilePop.forEach { it.fill(1f) }
         wallRise.forEach { it.fill(1f) }
         brokenWalls.clear()
+        closedHints.clear()
         for (col in wallButtonShow.indices) wallButtonShow[col] = if (battle.canPlayerCastWall(col)) 1f else 0f
         queueShift = 0f
     }
@@ -791,6 +796,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (battle.winner != null) {
             if (endTimer > endCardDelay() + TAP_DELAY) nextBattle()
+            return true
+        }
+        if (hintCloseButton.contains(x, y)) {
+            closeHint()
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             return true
         }
         if (battle.player.isCasting && RectF(cancelCastButton).apply { inset(-0.15f * u, -0.15f * u) }.contains(x, y)) {
@@ -1589,10 +1599,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         return lines
     }
 
-    /** The tutorial's current hint, in a card between the field and your panel. */
+    /**
+     * The tutorial's current hint, in a card between the field and your panel, with a × in its corner
+     * that closes it (the lesson carries on, and its next hint shows as usual).
+     */
     private fun drawTutorial(c: Canvas) {
+        hintCloseButton.setEmpty()
         val t = tutorial ?: return
-        val hint = t.hint?.let { str.getString(str.getIdentifier(it, "string", context.packageName)) } ?: return
+        val key = t.hint?.takeIf { it !in closedHints } ?: return
+        val hint = str.getString(str.getIdentifier(key, "string", context.packageName))
         if (!battle.started || battle.winner != null) return
         val pulse = 0.5f + 0.5f * sin(clock * 5f)
         if (t.pointsAtSpells) {
@@ -1616,7 +1631,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val pad = 0.2f * u
         val x0 = left + 0.3f * u
         val x1 = right - 0.3f * u
-        val lines = wrap(hint, size, x1 - x0 - 2 * pad)
+        val lines = wrap(hint, size, x1 - x0 - 2 * pad - HINT_CLOSE * u)
         val bottom = playerTop - 0.1f * u
         val top = bottom - (lines.size * lineH + 2 * pad - 0.06f * u)
         rect.set(x0, top, x1, bottom)
@@ -1626,6 +1641,21 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.strokeWidth = 0.035f * u
         c.drawRoundRect(rect, 0.22f * u, 0.22f * u, stroke)
         lines.forEachIndexed { i, s -> label(c, s, x0 + pad, top + pad + (i + 0.78f) * lineH, size, Pal.TEXT, Paint.Align.LEFT) }
+        // The × in the top right corner; its tap area is a little bigger than the cross.
+        val cx = x1 - pad - 0.12f * u
+        val cy = top + pad + 0.14f * u
+        val arm = 0.11f * u
+        stroke.color = Pal.TEXT_DIM
+        stroke.strokeWidth = 0.045f * u
+        c.drawLine(cx - arm, cy - arm, cx + arm, cy + arm, stroke)
+        c.drawLine(cx - arm, cy + arm, cx + arm, cy - arm, stroke)
+        hintCloseButton.set(cx - 0.4f * u, cy - 0.4f * u, cx + 0.4f * u, cy + 0.4f * u)
+    }
+
+    /** Closes the hint on screen: it stays closed for the rest of this duel. */
+    private fun closeHint() {
+        tutorial?.hint?.let { closedHints += it }
+        hintCloseButton.setEmpty()
     }
 
     private fun drawButton(c: Canvas, r: RectF, title: String, sub: String?, primary: Boolean, small: Boolean, danger: Boolean = false) {
@@ -2344,6 +2374,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** Size of a wall button, in layout units. */
         const val WALL_BUTTON = 0.78f
+
+        /** Room kept for the × on a tutorial hint, in layout units. */
+        const val HINT_CLOSE = 0.45f
 
         /** A wall on the field, as a share of the field cell (globes are 0.9). */
         const val WALL_TILE = 0.94f

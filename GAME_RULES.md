@@ -101,6 +101,8 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Level 1 (target dummy) is the tutorial: short hints that follow what you do — tap a spell, watch it fly
   and push, line up 3+, how damage and chains work, and a note if a shot backfires. Beating the dummy
   ends the tutorial for good (until Restart game).
+- Every hint has a **×** in its corner: tapping it closes that hint for the rest of the duel (the lesson
+  goes on, and the next hint shows as usual).
 - Level 2 (oak dummy) unlocks walls and teaches them: a hint points at the wall buttons until you cast
   walls, then one explains how walls break (shown for 9 s). It is shown once (until Restart game).
 
