@@ -1,14 +1,19 @@
-# Cuts a player avatar out of its Midjourney cast videos (see art/avatars/PROMPTS.md):
+# Cuts a character out of its Midjourney videos (see art/avatars/PROMPTS.md, art/enemies/PLAN.md):
 #
-#   cut-avatar.ps1 -Avatar mage      art/avatars/anim/mage/cast1..3/frame_00..NN.png
-#                                    -> res/drawable-nodpi/avatar_mage.webp (idle: cast1's first frame)
-#                                       and avatar_mage_cast1..3.webp (sheets, $Cols frames wide)
+#   cut-avatar.ps1 -Avatar mage -DefeatSheet                 player avatar: art/avatars/anim/mage/
+#       cast1..3/, defeat/ -> res/drawable-nodpi/avatar_mage.webp (idle), avatar_mage_cast1..3.webp,
+#       avatar_mage_defeat.webp (sheets) and avatar_mage_defeated.webp (the defeat's last frame)
+#   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_01  enemy: art/enemies/anim/bot_01/cast1/,
+#       defeat/ -> bot_01.webp, bot_01_cast1.webp, bot_01_defeated.webp
+#   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar dummy -NoIdle   dummy: defeat/ -> dummy_defeated.webp
 #
-# The white background is removed by flood-filling from the image border through pixels close to the
-# background colour, with a soft edge and the colour un-blended. Unlike tools/art/cut-sprite.ps1 (the
-# straw dummy), pale pixels don't let the fill through, so a pale glowing crystal stays.
-# Every frame of every cast shares one crop, so the idle pose and all animations line up exactly.
-param([string]$Avatar, [int]$Height = 340, [int]$Cols = 4)
+# Each clip folder holds frame_00..NN.png. The white background is removed by flood-filling from the
+# image border through pixels close to the background colour, with a soft edge and the colour
+# un-blended. Unlike tools/art/cut-sprite.ps1 (the straw dummy's hit), pale pixels don't let the fill
+# through, so a pale glowing crystal stays. Every frame of every clip shares one crop, so the idle pose,
+# the animations and the defeated image line up exactly.
+param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
+      [switch]$DefeatSheet, [switch]$NoIdle)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -151,7 +156,10 @@ public static class AvatarCut {
     }
 
     // dirs: one folder of frame_*.png per cast. Writes outIdle and outSheets[i] (one per dir).
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, int height, int cols) {
+    // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
+    // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
+    // defeatIndex) unless null. All share one crop.
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols) {
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
         foreach (string dir in dirs) {
@@ -165,8 +173,14 @@ public static class AvatarCut {
         int m = (int)(H * 0.02);
         Rectangle crop = Rectangle.FromLTRB(Math.Max(0, x0 - m), Math.Max(0, y0 - m), Math.Min(W, x1 + m + 1), Math.Min(H, y1 + 2));
         int fw = (int)Math.Round(height * crop.Width / (double)crop.Height);
-        using (Bitmap o = Scale(casts[0][0], W, H, crop, fw, height)) o.Save(outIdle, ImageFormat.Png);
+        if (!string.IsNullOrEmpty(outIdle))
+            using (Bitmap o = Scale(casts[0][0], W, H, crop, fw, height)) o.Save(outIdle, ImageFormat.Png);
+        if (!string.IsNullOrEmpty(outDefeated) && defeatIndex >= 0) {
+            var d = casts[defeatIndex];
+            using (Bitmap o = Scale(d[d.Count - 1], W, H, crop, fw, height)) o.Save(outDefeated, ImageFormat.Png);
+        }
         for (int s = 0; s < casts.Count; s++) {
+            if (string.IsNullOrEmpty(outSheets[s])) continue;
             var frames = casts[s];
             int n = frames.Count, rows = (n + cols - 1) / cols;
             using (Bitmap sheet = new Bitmap(cols * fw, rows * height, PixelFormat.Format32bppArgb)) {
@@ -184,10 +198,16 @@ public static class AvatarCut {
 "@
 
 $root = Join-Path $PSScriptRoot '..\..'
-$anim = (Resolve-Path (Join-Path $root "art\avatars\anim\$Avatar")).Path
+$anim = (Resolve-Path (Join-Path $root "$Art\anim\$Avatar")).Path
 $res = (Resolve-Path (Join-Path $root 'app\src\main\res\drawable-nodpi')).Path
-$dirs = @(Get-ChildItem $anim -Directory | Where-Object { $_.Name -like 'cast*' } | Sort-Object Name | ForEach-Object { $_.FullName })
-$sheets = @($dirs | ForEach-Object { Join-Path $res ("avatar_{0}_{1}.png" -f $Avatar, (Split-Path $_ -Leaf)) })
-$idle = Join-Path $res "avatar_$Avatar.png"
-[AvatarCut]::Run($dirs, $idle, $sheets, $Height, $Cols)
-& (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle) + $sheets)
+$base = "$Prefix$Avatar"
+$dirs = @(Get-ChildItem $anim -Directory | Where-Object { $_.Name -like 'cast*' -or $_.Name -eq 'defeat' } | Sort-Object Name | ForEach-Object { $_.FullName })
+$defeatIndex = [array]::IndexOf(@($dirs | ForEach-Object { Split-Path $_ -Leaf }), 'defeat')
+$sheets = @($dirs | ForEach-Object {
+    $leaf = Split-Path $_ -Leaf
+    if ($leaf -eq 'defeat' -and -not $DefeatSheet) { $null } else { Join-Path $res ("{0}_{1}.png" -f $base, $leaf) }
+})
+$idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
+$defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols)
+& (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })

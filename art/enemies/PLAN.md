@@ -1,0 +1,56 @@
+# Enemy avatars: 50 levels of cybernetic mages
+
+Every mage opponent gets a Midjourney avatar in the same flat, dark style as the player avatars
+(`../avatars/PROMPTS.md`), facing left toward the field, with **mechanical cybernetic parts** that grow
+level by level. Each avatar has one idle image, **one cast animation** (ends throwing magic to the left)
+and a **defeated image** (the last frame of a collapse animation, so it is exactly the same character),
+shown on the victory card. The two training dummies get a defeated image only.
+
+Mage *k* (the k-th mage, game level k + 3) uses avatar `bot_kk`. The first ones must look weak; the
+cybernetics, size, armour and magic grow steadily, so level 50 is a near-machine titan.
+
+## Stages
+
+| Bots | Stage | Cybernetics | Magic, look |
+|---|---|---|---|
+| 1–10 | Apprentices | one small brass part: a gauntlet, an eye lens, a temple implant, one clockwork forearm | plain worn robes, short staffs, small crystals |
+| 11–20 | Adepts | mechanical limbs, steam vents, brass shoulder plates, glowing rune circuitry on the skin | longer robes with metal trim, bigger crystals, floating sparks |
+| 21–30 | Sorcerers, warlocks | half-machine bodies, armoured chests, back-mounted arcane engines, small hovering drone orbs | dark armoured robes, staffs with rotating rings |
+| 31–40 | Archmages | exosuits, a glowing reactor core in the chest, extra mechanical arms, levitation | crowns of floating blades or gears, large auras |
+| 41–50 | Grand archmages | colossal techno-sorcerers, almost fully machine, halos of gears, wings of metal and light | cosmic energy, the most dramatic silhouettes |
+
+Within a stage, vary age, gender, skin tone and the glowing accent colour (teal, amber, crimson,
+violet, ice blue, acid green), so neighbouring levels don't look alike. Describe looks, not
+ethnicities' clothing.
+
+## Prompt pattern
+
+```
+flat 2D fantasy game art of {CHARACTER with its CYBERNETIC PARTS}, holding {STAFF}, stern serious expression, dark and moody, full body, three-quarter view facing left, standing, centered, the whole figure fits in the frame with space around it, minimalist flat 2D fantasy game art, bold simple shapes, very little detail, limited dark muted palette with one glowing accent color, flat colors with hard-edged two-tone shading, no outlines, no texture, on a plain pure white background --ar 3:4 --s 150 --no 3d, render, realistic, photo, painterly, sketch, texture, intricate detail, gradient background, backdrop, floor, ground shadow, text, border, frame, multiple characters, cute, smile
+```
+
+Animate (no Loop, Low motion), always with `mouth closed and silent the whole time, no talking, no lip
+movement` and `static camera, no camera movement, same plain white background`:
+
+- **Cast:** `{who}, …, gathers {colour} magic …, then at the very end thrusts the staff forward to the left and launches a glowing {colour} magic bolt that flies off to the left out of the frame`
+- **Defeat:** `{who}, mouth closed, no talking, is struck by magic, staggers, {cybernetics} spark and smoke, drops the staff and collapses to the knees, ending slumped on the knees on the ground, defeated and exhausted`
+
+## Made so far
+
+| Bot | Level | Look | Image job (pick) | Cast video | Defeat video |
+|---|---|---|---|---|---|
+| bot_01 | 3 | young apprentice, worn grey-brown robe, one clockwork brass forearm, teal temple implant, short staff with a teal crystal | b1e4c670-70b7-48b7-a57d-0d0aea01b962 (2) | 08df9a3c-ce8f-4fc0-b8e2-4030f8cca462 (3) | 0049724e-0ff6-49c2-9079-596cdf26d08c (2), last frame |
+
+Dummies: one defeated image for both, `dummy_defeated.webp`: the last frame of
+b9db9d36-02df-4b59-a7fc-67ab0431de2c (4) (`… is struck by a powerful magic blast, its wooden post snaps
+and it topples over …`).
+
+## Making a bot
+
+1. Imagine with the prompt pattern; pick the image. Animate its cast and its defeat.
+2. Pull the frames (`anim/bot_kk/cast1/frame_00..47.png`; for the defeat only the last frame,
+   `anim/bot_kk/defeat/frame_00.png`; not in git), then
+   `tools/art/cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_kk` writes `bot_kk.webp` (idle),
+   `bot_kk_cast1.webp` (8×6 sheet) and `bot_kk_defeated.webp`, all with one crop.
+3. Add it to `EnemyAvatars.all` in `ui/Avatars.kt` with its crystal position (`tipX`, `tipY`, measured
+   on the idle frame) and glow colour. Mages past the last one made still use the drawn mage.

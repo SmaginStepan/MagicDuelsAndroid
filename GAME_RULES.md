@@ -117,7 +117,12 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   (90 HP at first, at most 250). Around level 17 they are as fast as the original first bot.
 - Titles rise every two levels: Novice, Apprentice, Initiate, Adept, Conjurer, Magus, Sorcerer, Warlock,
   Archmage, Grand Archmage.
+- Mages have Midjourney avatars with cybernetic parts that grow level by level (`art/enemies/PLAN.md`;
+  only the first is made so far, later mages use the drawn mage). A bot's avatar plays its cast animation
+  over each cast and throws the magic itself.
 - Win to go up a level; lose to retry the same level. Your level is saved on the phone.
+- The end card shows the loser's **defeated pose**: a beaten bot sinks into it on the field, the dummies
+  share one, and when you lose your avatar plays its collapse (2 s) before the card appears.
 
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 

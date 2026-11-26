@@ -44,6 +44,9 @@ object Opponents {
         Opponent("Oak dummy", AvatarKind.DUMMY, hp = 80, dummyIndex = 1),
     )
 
+    /** How many training dummies open the ladder (the k-th mage is level dummyCount + k). */
+    val dummyCount: Int get() = dummies.size
+
     /** The first mage: 10× slower than the original first bot (which cast 1.5 s and waited 2.8 s). */
     const val FIRST_CAST_TIME = 15f
     const val FIRST_IDLE_TIME = 28f

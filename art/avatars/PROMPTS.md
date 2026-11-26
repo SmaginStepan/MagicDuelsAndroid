@@ -66,3 +66,22 @@ was ddeff857-…, 7b7a6b07-…, 0963cf2a-… (mage), 513884a8-…, f268fb56-…,
   until it throws as the shot leaves); neighbouring frames are blended, and afterwards the last pose
   fades back into the idle one over 0.4 s. Only the playing sheet is kept in memory.
   Crystal positions (`tipX`, `tipY`) were measured from the idle frames.
+
+## Defeat animation (one per avatar)
+
+Animate (no Loop, Low motion): `{who}, mouth closed, no talking, no lip movement, is struck by a powerful
+magic blast, staggers backwards, {what happens to the staff / robe}, drops the staff and collapses to the
+knees, ending slumped on the knees on the ground, defeated and exhausted, static camera, no camera
+movement, same plain white background`.
+
+| Avatar | Video | Pick |
+|---|---|---|
+| Mage | 5b4c95d7-f991-4ebb-82b1-79e69329ba13 | variation 1 |
+| Sorceress | 970f3de9-6e2c-4bf9-bf0e-978bf984517d | variation 4 |
+| Conjurer | 91f36c0f-dd68-46f1-aa2a-5910a3505022 | variation 1 |
+
+- `anim/<avatar>/defeat/frame_00..47.png`, taken like the casts; `cut-avatar.ps1 -Avatar <name> -DefeatSheet`
+  cuts all clips with one crop and also writes `avatar_<name>_defeat.webp` (8×6 sheet) and
+  `avatar_<name>_defeated.webp` (the last frame).
+- In the game: when you lose, the collapse plays over 2 s and the avatar stays in the last pose; the
+  end card then shows `_defeated` (trimmed to the figure) above "Defeated".

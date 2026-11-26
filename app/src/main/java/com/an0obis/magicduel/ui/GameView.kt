@@ -154,6 +154,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var lastCastFrame = 0
     private var castEndedAt = -1f
 
+    // The same for the bot's sprite (see drawEnemyAvatar).
+    private var enemyLastCastAnim: Art.Anim? = null
+    private var enemyLastCastFrame = 0
+    private var enemyCastEndedAt = -1f
+
+    /** The current opponent's Midjourney avatar: null for the dummies and for mages without one yet. */
+    private val enemyAvatar: EnemyAvatar?
+        get() = if (battle.opponent.kind == AvatarKind.DUMMY) null else EnemyAvatars.forMage(level - Opponents.dummyCount)
+
     /** The game's texts in [language], whatever language the phone uses. */
     private var str: Resources = localized(language)
 
@@ -387,6 +396,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         art.hardwareBitmaps = isHardwareAccelerated
         art.preload(battle.elements)
         art.prepareAvatarCast(avatar, castAnim)
+        prepareSprites()
     }
 
     private fun resetEffects() {
@@ -410,11 +420,18 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         queueShift = 0f
     }
 
+    /** Starts decoding the sprite sheets this duel may need: your defeat and the bot's cast. */
+    private fun prepareSprites() {
+        art.prepareSheet(avatar.defeatRes)
+        enemyAvatar?.let { art.prepareSheet(it.castRes) }
+    }
+
     /** A fresh duel at the current level; level 1 runs the tutorial until it has been beaten once. */
     private fun startBattle() {
         battle = Battle(Opponents.forLevel(level))
         art.preload(battle.elements)
         art.prepareAvatarCast(avatar, castAnim)
+        prepareSprites()
         tutorial = when {
             level == 0 && !tutorialDone -> Tutorial()
             level == 1 && !wallTutorialDone -> WallTutorial()
@@ -622,9 +639,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 }
             }
             is BattleEvent.Launched -> {
-                // The bot's drawn mage shoots a bolt line from its staff to the lane; your avatar's cast
-                // animation already throws the magic, so no line is drawn for you.
-                if (e.side == Side.ENEMY) {
+                // The bot's drawn (vector) mage shoots a bolt line from its staff to the lane; the avatars'
+                // cast animations (yours and a bot's Midjourney one) already throw the magic, so no line.
+                if (e.side == Side.ENEMY && enemyAvatar == null) {
                     val from = staffTip(e.side)
                     bolts += Bolt(from.x, from.y, startX(e.side), laneY(e.lane), art.color(e.element))
                 }
@@ -773,7 +790,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             return true
         }
         if (battle.winner != null) {
-            if (endTimer > TAP_DELAY) nextBattle()
+            if (endTimer > endCardDelay() + TAP_DELAY) nextBattle()
             return true
         }
         if (battle.player.isCasting && RectF(cancelCastButton).apply { inset(-0.15f * u, -0.15f * u) }.contains(x, y)) {
@@ -826,6 +843,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 hit != null && hit.startsWith("avatar_") -> {
                     avatar = Avatars.byId(hit.removePrefix("avatar_"))
                     art.prepareAvatarCast(avatar, castAnim)
+                    prepareSprites()
                     save()
                     closeDialog()
                 }
@@ -883,9 +901,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun chest(side: Side) =
         if (side == Side.PLAYER) PointF(playerX, playerFoot - playerH * 0.5f) else PointF(enemyX, enemyFoot - enemyH * 0.5f)
 
-    private fun staffTip(side: Side): PointF =
-        if (side == Side.PLAYER) avatarFrame(RectF(), playerX).let { PointF(it.left + avatar.tipX * it.width(), it.top + avatar.tipY * it.height()) }
-        else art.mageOrb(enemyX, enemyFoot, enemyH, false, 1f)
+    private fun staffTip(side: Side): PointF = when {
+        side == Side.PLAYER -> avatarFrame(RectF(), playerX).let { PointF(it.left + avatar.tipX * it.width(), it.top + avatar.tipY * it.height()) }
+        else -> enemyAvatar?.let { a -> enemyFrame(RectF(), enemyX, a).let { PointF(it.left + a.tipX * it.width(), it.top + a.tipY * it.height()) } }
+            ?: art.mageOrb(enemyX, enemyFoot, enemyH, false, 1f)
+    }
 
     // ================================================================ drawing
 
@@ -1024,12 +1044,103 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             return
         }
         val x = enemyX + sin(clock * 55f) * shake[1] * 0.08f * u
-        run {
-            val e = battle.enemy
-            val castColor = castColor(e) ?: if (afterglow[1] > 0f) lastCastColor[1] else null
-            val cast = if (e.isCasting) e.castProgress else afterglow[1]
+        val e = battle.enemy
+        val castColor = castColor(e) ?: if (afterglow[1] > 0f) lastCastColor[1] else null
+        val cast = if (e.isCasting) e.castProgress else afterglow[1]
+        val sprite = enemyAvatar
+        if (sprite == null) {
             art.drawMage(c, x, enemyFoot, enemyH, false, battle.opponent.robeColor, true, castColor, cast, clock, flash[1], DEFEAT_TILT * k, 1f - 0.6f * k)
+            return
         }
+        drawEnemySprite(c, sprite, x, castColor, cast)
+    }
+
+    /** Where a bot's sprite is drawn, standing on [enemyFoot] centred on [x]. */
+    private fun enemyFrame(out: RectF, x: Float, a: EnemyAvatar): RectF {
+        val img = art.image(a.idleRes)
+        val h = enemyH * ENEMY_AVATAR_SCALE
+        val w = h * img.width / img.height
+        out.set(x - w / 2f, enemyFoot - h, x + w / 2f, enemyFoot)
+        return out
+    }
+
+    /**
+     * A bot's Midjourney avatar, facing left: like yours, its cast animation plays over the whole cast
+     * and settles back into the idle pose; hits flash it white and shake it. When you win it sinks
+     * into its defeated pose (the last frame of its collapse, so the same figure in the same place).
+     */
+    private fun drawEnemySprite(c: Canvas, a: EnemyAvatar, x: Float, castColor: Int?, cast: Float) {
+        val e = battle.enemy
+        val frame = enemyFrame(RectF(), x, a)
+        val h = frame.height()
+        val beaten = if (battle.winner == Side.PLAYER) smooth01(endTimer / ENEMY_DEFEAT_FADE) else 0f
+        val light = castColor ?: a.glow
+        fill.shader = RadialGradient(
+            frame.centerX(), frame.top + h * 0.45f, h * 0.55f,
+            withAlpha(light, ((50 + 60 * cast) * (1f - 0.5f * beaten)).toInt()), withAlpha(light, 0), Shader.TileMode.CLAMP,
+        )
+        c.drawCircle(frame.centerX(), frame.top + h * 0.45f, h * 0.55f, fill)
+        fill.shader = null
+        avatarPaint.alpha = 255
+        avatarPaint.colorFilter = if (flash[1] > 0.01f) PorterDuffColorFilter(withAlpha(WHITE, (170 * flash[1]).toInt()), PorterDuff.Mode.SRC_ATOP) else null
+        val anim = if (e.isCasting && battle.winner == null) art.sheetIfReady(a.castRes) else null
+        var clipT = 0f
+        if (anim != null) {
+            clipT = e.castProgress
+            enemyLastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
+            enemyLastCastAnim = anim
+            enemyCastEndedAt = -1f
+        } else {
+            if (beaten < 1f) {
+                avatarPaint.alpha = (255 * (1f - beaten)).toInt()
+                c.drawBitmap(art.image(a.idleRes), null, frame, avatarPaint)
+            }
+            if (beaten > 0f) {
+                avatarPaint.alpha = (255 * beaten).toInt()
+                c.drawBitmap(art.image(a.defeatedRes), null, frame, avatarPaint)
+            }
+            avatarPaint.alpha = 255
+            val last = enemyLastCastAnim
+            if (last != null) {
+                if (enemyCastEndedAt < 0f) enemyCastEndedAt = clock
+                val r = (clock - enemyCastEndedAt) / AVATAR_SETTLE_TIME
+                if (r >= 1f || battle.winner != null) {
+                    enemyLastCastAnim = null
+                } else {
+                    avatarPaint.alpha = (255 * (1f - smooth01(r))).toInt()
+                    last.draw(c, enemyLastCastFrame, frame, avatarPaint)
+                    avatarPaint.alpha = 255
+                }
+            }
+        }
+        avatarPaint.colorFilter = null
+        val tipGlow = 1f - smooth01(clipT / 0.12f)
+        if (castColor != null && cast > 0f && tipGlow > 0f && battle.winner == null) {
+            val tx = frame.left + a.tipX * frame.width()
+            val ty = frame.top + a.tipY * h
+            val r = (0.2f + 0.3f * cast) * u
+            fill.shader = RadialGradient(tx, ty, r, withAlpha(castColor, (200 * cast * tipGlow).toInt()), withAlpha(castColor, 0), Shader.TileMode.CLAMP)
+            c.drawCircle(tx, ty, r, fill)
+            fill.shader = null
+        }
+    }
+
+    /**
+     * Draws the point [t] (0 to 1) of [anim] into [dst]: between two frames the next one fades in over
+     * the current one, so 48 close frames read as motion, not a slideshow. Returns the nearest frame.
+     */
+    private fun drawClip(c: Canvas, anim: Art.Anim, t: Float, dst: RectF, paint: Paint): Int {
+        val pos = t.coerceIn(0f, 1f) * (anim.count - 1)
+        val f = pos.toInt()
+        anim.draw(c, f, dst, paint)
+        val blend = pos - f
+        if (blend > 0.05f && f + 1 < anim.count) {
+            val base = paint.alpha
+            paint.alpha = (base * blend).toInt()
+            anim.draw(c, f + 1, dst, paint)
+            paint.alpha = base
+        }
+        return min(anim.count - 1, f + if (blend >= 0.5f) 1 else 0)
     }
 
     private fun drawField(c: Canvas) {
@@ -1942,11 +2053,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * pose as the shot leaves. Neighbouring frames are blended so the motion stays smooth. Behind it,
      * a soft light in its crystal's colour (the spell's colour while casting) keeps the dark figure
      * readable; the crystal glows with the spell. Hits flash it white and shake it; on defeat it
-     * topples backwards and fades.
+     * plays its collapse animation and stays in the defeated pose.
      */
     private fun drawPlayerAvatar(c: Canvas) {
         val lost = battle.winner == Side.ENEMY
-        val k = if (lost) smooth01(endTimer / 0.8f) else 0f
+        // On defeat the avatar plays its collapse (over DEFEAT_ANIM_TIME, then holds the last, defeated
+        // pose); if that sheet isn't decoded yet it topples backwards and fades instead.
+        val defeat = if (lost) art.sheetIfReady(avatar.defeatRes) else null
+        val fade = if (lost) smooth01(endTimer / 0.8f) else 0f
+        val k = if (defeat == null) fade else 0f
         val p = battle.player
         val castColor = castColor(p) ?: if (afterglow[0] > 0f) lastCastColor[0] else null
         val cast = if (p.isCasting) p.castProgress else afterglow[0]
@@ -1959,7 +2074,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val light = castColor ?: avatar.glow
         fill.shader = RadialGradient(
             frame.centerX(), frame.top + h * 0.45f, h * 0.55f,
-            withAlpha(light, ((50 + 60 * cast) * (1f - k)).toInt()), withAlpha(light, 0), Shader.TileMode.CLAMP,
+            withAlpha(light, ((50 + 60 * cast) * (1f - 0.6f * fade)).toInt()), withAlpha(light, 0), Shader.TileMode.CLAMP,
         )
         c.drawCircle(frame.centerX(), frame.top + h * 0.45f, h * 0.55f, fill)
         fill.shader = null
@@ -1967,25 +2082,15 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         avatarPaint.colorFilter = if (flash[0] > 0.01f) PorterDuffColorFilter(withAlpha(WHITE, (170 * flash[0]).toInt()), PorterDuff.Mode.SRC_ATOP) else null
         // The cast clip lasts the whole cast: its speed adapts to the cast's length, so the avatar is
         // moving from the tap until it throws its magic as the shot leaves.
-        val anim = if (p.isCasting) art.avatarCast(avatar, castAnim) else null
+        val anim = if (p.isCasting && !lost) art.avatarCast(avatar, castAnim) else null
         var clipT = 0f
-        if (anim != null) {
-            val t = p.castProgress
-            clipT = t
-            // Between two frames, the next one fades in over the current one: with 48 frames close
-            // together this reads as motion, not a slideshow.
-            val pos = t * (anim.count - 1)
-            val f = pos.toInt()
-            anim.draw(c, f, frame, avatarPaint)
-            val blend = pos - f
-            if (blend > 0.05f && f + 1 < anim.count) {
-                val base = avatarPaint.alpha
-                avatarPaint.alpha = (base * blend).toInt()
-                anim.draw(c, f + 1, frame, avatarPaint)
-                avatarPaint.alpha = base
-            }
+        if (defeat != null) {
+            drawClip(c, defeat, endTimer / DEFEAT_ANIM_TIME, frame, avatarPaint)
+            lastCastAnim = null
+        } else if (anim != null) {
+            clipT = p.castProgress
+            lastCastFrame = drawClip(c, anim, clipT, frame, avatarPaint)
             lastCastAnim = anim
-            lastCastFrame = min(anim.count - 1, f + if (blend >= 0.5f) 1 else 0)
             castEndedAt = -1f
         } else {
             c.drawBitmap(art.avatarIdle(avatar), null, frame, avatarPaint)
@@ -2013,7 +2118,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val tx = frame.left + avatar.tipX * frame.width()
             val ty = frame.top + avatar.tipY * h
             val r = (0.25f + 0.35f * cast) * u
-            fill.shader = RadialGradient(tx, ty, r, withAlpha(castColor, (200 * cast * tipGlow * (1f - k)).toInt()), withAlpha(castColor, 0), Shader.TileMode.CLAMP)
+            fill.shader = RadialGradient(tx, ty, r, withAlpha(castColor, (200 * cast * tipGlow * (1f - fade)).toInt()), withAlpha(castColor, 0), Shader.TileMode.CLAMP)
             c.drawCircle(tx, ty, r, fill)
             fill.shader = null
         }
@@ -2152,21 +2257,53 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         label(c, if (t < intro * 0.6f) s(R.string.get_ready) else s(R.string.duel), cx, cy + 0.62f * u, 0.42f * u, Pal.TEXT, Paint.Align.CENTER, a)
     }
 
+    /** When the end card starts fading in: after a loss, once your avatar's collapse has mostly played. */
+    private fun endCardDelay(): Float = if (battle.winner == Side.ENEMY) DEFEAT_ANIM_TIME - 0.3f else END_CARD_DELAY
+
+    /**
+     * The defeated pose shown on the end card: the beaten opponent's when you win (the dummies share
+     * one), your avatar's when you lose; null for a mage without an avatar yet.
+     */
+    private fun endCardImage(won: Boolean): Int? = when {
+        !won -> avatar.defeatedRes
+        battle.opponent.kind == AvatarKind.DUMMY -> R.drawable.dummy_defeated
+        else -> enemyAvatar?.defeatedRes
+    }
+
+    /**
+     * The end card: Victory or Defeated, who's next (or who won), and above them the loser's defeated
+     * pose, trimmed to the figure and fitted into a band END_IMAGE_H tall.
+     */
     private fun drawEndOverlay(c: Canvas) {
         val winner = battle.winner ?: return
-        val k = smooth01((endTimer - 0.7f) / 0.5f)
+        val k = smooth01((endTimer - endCardDelay()) / 0.5f)
         if (k <= 0f) return
         fill.color = withAlpha(BLACK, (150 * k).toInt())
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+        val won = winner == Side.PLAYER
+        val image = endCardImage(won)
         val cx = width / 2f
         val cy = fieldTop + 2.5f * fu
-        rect.set(left + 0.6f * u, cy - 1.6f * u, right - 0.6f * u, cy + 1.6f * u)
+        val imageBottom = cy - 1.2f * u
+        val top = if (image != null) imageBottom - (END_IMAGE_H + 0.25f) * u else cy - 1.6f * u
+        rect.set(left + 0.6f * u, top, right - 0.6f * u, cy + 1.6f * u)
         fill.color = withAlpha(Pal.CARD, (240 * k).toInt())
         c.drawRoundRect(rect, 0.35f * u, 0.35f * u, fill)
         stroke.color = withAlpha(GOLD, (200 * k).toInt())
         stroke.strokeWidth = 0.05f * u
         c.drawRoundRect(rect, 0.35f * u, 0.35f * u, stroke)
-        val won = winner == Side.PLAYER
+        if (image != null) {
+            val src = art.opaqueBounds(image)
+            val maxW = rect.width() - 1f * u
+            var h = END_IMAGE_H * u
+            var w = h * src.width() / src.height()
+            if (w > maxW) { h *= maxW / w; w = maxW }
+            val dst = RectF(cx - w / 2f, imageBottom - h, cx + w / 2f, imageBottom)
+            avatarPaint.alpha = (255 * k).toInt()
+            avatarPaint.colorFilter = null
+            c.drawBitmap(art.image(image), src, dst, avatarPaint)
+            avatarPaint.alpha = 255
+        }
         label(c, if (won) s(R.string.victory) else s(R.string.defeated), cx, cy - 0.45f * u, 0.8f * u, if (won) GOLD else Pal.ENEMY_HP, Paint.Align.CENTER, k)
         val subtitle = when {
             won && tutorial is Tutorial -> s(R.string.tutorial_complete_next, opponentName(Opponents.forLevel(level + 1)))
@@ -2174,7 +2311,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             else -> s(R.string.wins_fmt, opponentName(battle.opponent))
         }
         label(c, subtitle, cx, cy + 0.35f * u, 0.36f * u, Pal.TEXT, Paint.Align.CENTER, k)
-        if (endTimer > TAP_DELAY) {
+        if (endTimer > endCardDelay() + TAP_DELAY) {
             label(c, s(R.string.tap_continue), cx, cy + 1.05f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER, k * (0.6f + 0.4f * sin(clock * 4f)))
         }
     }
@@ -2243,7 +2380,25 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** How long air (and lightning) magic takes to zap from a burst globe to its target. */
         const val ZAP_TIME = 0.14f
-        const val TAP_DELAY = 1.5f
+
+        /** After the end card starts fading in, how long until a tap continues. */
+        const val TAP_DELAY = 0.8f
+
+        /** When the end card starts fading in after a win (after a loss it waits for your avatar's collapse). */
+        const val END_CARD_DELAY = 0.7f
+
+        /** How long your avatar's defeat animation plays before it holds the defeated pose. */
+        const val DEFEAT_ANIM_TIME = 2f
+
+        /** How long a beaten bot takes to sink into its defeated pose. */
+        const val ENEMY_DEFEAT_FADE = 0.6f
+
+        /** A bot sprite's height, as a multiple of [enemyH]. */
+        const val ENEMY_AVATAR_SCALE = 1.05f
+
+        /** Height of the defeated pose on the end card, in layout units. */
+        const val END_IMAGE_H = 2.1f
+
         const val DEFEAT_TILT = 32f
 
         /** Your avatar's frame height, as a multiple of [playerH] (the frame has room for the cast's magic). */

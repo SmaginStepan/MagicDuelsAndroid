@@ -409,6 +409,53 @@ class Art(private val res: Resources, private val packageName: String) {
     fun avatarCast(a: Avatar, k: Int): Anim? =
         if (avatarCastKey == "${a.id}/${Math.floorMod(k, a.castRes.size)}") avatarCastAnim else null
 
+    // Single animation sheets (an enemy's cast, your avatar's defeat), 48 frames in Avatars' grid,
+    // decoded in the background the first time they're asked for; and still images (idle and
+    // defeated poses).
+    private val sheets = ConcurrentHashMap<Int, Anim>()
+    private val sheetsLoading = ConcurrentHashMap.newKeySet<Int>()
+    private val images = HashMap<Int, Bitmap>()
+    private val opaque = HashMap<Int, Rect>()
+
+    /** Starts decoding the 48-frame sheet [id] in the background (see [sheetIfReady]). */
+    fun prepareSheet(id: Int) {
+        if (sheets.containsKey(id) || !sheetsLoading.add(id)) return
+        // Keep only a few in memory (about 13 MB each): the current bot's cast and your defeat.
+        if (sheets.size >= 4) sheets.clear()
+        Thread {
+            val opts = BitmapFactory.Options().apply {
+                inScaled = false
+                if (hardwareBitmaps) inPreferredConfig = Bitmap.Config.HARDWARE
+            }
+            val sheet = BitmapFactory.decodeResource(res, id, opts) ?: decode(id)
+            sheets[id] = Anim(sheet, Avatars.CAST_COLS, Avatars.CAST_ROWS)
+            sheetsLoading.remove(id)
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** The sheet [id] once decoded (it starts decoding if needed), else null. */
+    fun sheetIfReady(id: Int): Anim? = sheets[id] ?: run { prepareSheet(id); null }
+
+    /** A still image (an idle or defeated pose), decoded once. */
+    fun image(id: Int): Bitmap = images.getOrPut(id) { decode(id) }
+
+    /** The part of image [id] that isn't transparent (to draw a defeated pose without its empty margins). */
+    fun opaqueBounds(id: Int): Rect = opaque.getOrPut(id) {
+        val b = image(id)
+        val px = IntArray(b.width * b.height)
+        b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+        var x0 = b.width; var y0 = b.height; var x1 = -1; var y1 = -1
+        for (y in 0 until b.height) for (x in 0 until b.width) {
+            if ((px[y * b.width + x] ushr 24) > 40) {
+                if (x < x0) x0 = x
+                if (x > x1) x1 = x
+                if (y < y0) y0 = y
+                if (y > y1) y1 = y
+            }
+        }
+        if (x1 < 0) Rect(0, 0, b.width, b.height) else Rect(x0, y0, x1 + 1, y1 + 1)
+    }
+
     /** The soft aura behind a globe in the element's colour: one small bitmap per element, drawn scaled. */
     private fun aura(e: Element): Bitmap = auras.getOrPut(e) {
         val size = 128
