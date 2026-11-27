@@ -40,7 +40,7 @@ movement` and `static camera, no camera movement, same plain white background`:
 | Bot | Level | Look | Image job (pick) | Cast video | Defeat video |
 |---|---|---|---|---|---|
 | bot_01 | 3 | **Novice Cogwin**: young apprentice, worn grey-brown robe, one clockwork brass forearm, teal temple implant, short staff with a teal crystal | b1e4c670-70b7-48b7-a57d-0d0aea01b962 (2) | 08df9a3c-ce8f-4fc0-b8e2-4030f8cca462 (3) | 0049724e-0ff6-49c2-9079-596cdf26d08c (2), last frame |
-| bot_02 | 4 | **Novice Rustjaw**: lean shaved-head apprentice warlock, rust-red hooded robe, brass jaw plate, amber eye lens, brass clockwork knee brace, crooked staff with an amber crystal | 02481782-93be-4002-b8ad-024d558f1ad0 (1) | fdcafb37-2532-4fd0-ae7f-a99c8013947c (2) | f4d2433e-ec4e-42e9-b631-1d398b0bfe0c (2), last frame |
+| bot_02 | 4 | **Novice Rustjaw**: lean shaved-head apprentice warlock, rust-red hooded robe, brass jaw plate, amber eye lens, brass clockwork knee brace, crooked staff with an amber crystal | 02481782-93be-4002-b8ad-024d558f1ad0 (1) | **Google Flow**, Veo 3.1 Lite, project fcb5346a-9fc6-44dc-99bd-cb51edbe15bf, clip M2 (`ANqvLOZhsTpp…`): mirrored idle as Start and End, frames 0–4.3 s flipped back (was Midjourney fdcafb37-…, 2) | f4d2433e-ec4e-42e9-b631-1d398b0bfe0c (2), last frame |
 
 Dummies: one defeated image for both, `dummy_defeated.webp`: the last frame of
 b9db9d36-02df-4b59-a7fc-67ab0431de2c (4) (`… is struck by a powerful magic blast, its wooden post snaps
@@ -59,6 +59,10 @@ The standard sequence for the next opponent (mage k, `bot_kk`), with the user ch
 3. **Animations.** Animate the cast and the defeat (no Loop, Low motion). Show the cast variations as
    frame strips and the defeats with their last frame, and let the user pick one of each: the cast
    should end on the throw, the defeat's last frame becomes the defeated image.
+   The cast can also come from **Google Flow** (the google-flow skill; bot_02): the idle still
+   mirrored as Start and End, a small fireball thrown to the right, frames pulled up to the throw and
+   flipped back, then fitted to the Midjourney video's geometry (and its frames padded the same way)
+   so every clip lines up; give the avatar a `scale` if its frame got taller.
 4. **Cut.** Pull the frames (`anim/bot_kk/cast1/frame_00..47.png`; for the defeat only the last frame,
    `anim/bot_kk/defeat/frame_00.png`; not in git), then
    `tools/art/cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_kk` writes `bot_kk.webp` (idle),

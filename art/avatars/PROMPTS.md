@@ -45,7 +45,7 @@ frame:
 | Avatar | cast1 (raise, bolt) | cast2 (orb throw) | cast3 (channel, projectile) |
 |---|---|---|---|
 | Mage | fb38e59e-4d2d-4431-9863-c6da7bfcfbfc, variation 3 | a3085e15-ecb4-4fd4-9c72-838feca010ab, 3 | 1d9cbac2-94d3-4a19-9c69-b16c113ace45, 3 |
-| Sorceress | 254734d0-dc6f-42e5-8bb6-96ad38ffaf66, 4 | ebedaa5a-80bd-4401-90ad-f00dff5fbda3, 1 | 8848498a-0280-461a-ad98-d738204ccb8f, 3 |
+| Sorceress | (replaced by Google Flow, see the end of this file) 254734d0-…, 4 | ebedaa5a-…, 1 | 8848498a-…, 3 |
 | Conjurer | c8a959af-82d8-41a6-950f-e5557dd63b22, 4 | 4bc7f7fe-667a-4647-a112-c8f78192949e, 3 | 15328e03-4c1c-460a-b119-2627dd90e43a, 4 |
 
 The first set of animations (looped, with the magic fading instead of being thrown, and lip movement)
@@ -87,3 +87,27 @@ movement, same plain white background`.
   `avatar_<name>_defeated.webp` (the last frame).
 - In the game: when you lose, the collapse plays over 2 s and the avatar stays in the last pose; the
   end card then shows `_defeated` (trimmed to the figure) above "Defeated".
+
+## Sorceress, remade with Google Flow (2026-11-27)
+
+Her three casts and her defeat were remade with Google Flow (the google-flow skill), Veo 3.1 Lite,
+9:16, x2 each, silent videos, project `fcb5346a-9fc6-44dc-99bd-cb51edbe15bf`. The still: her idle
+frame with the floor line removed, padded to 9:16 (720 wide, top at y = 164). Casts use it as **Start
+and End** (she returns to the pose; the frames are cut where the magic leaves the frame); the defeat
+uses it as Start only. She faces right, which is where Veo throws anyway, so no mirroring. Each prompt
+starts `The severe dark sorceress in the crimson and black robe faces the right edge of the frame.
+Silent, mouth closed the whole time, no talking, no lip movement.` and ends `Static camera, locked-off
+shot, no camera movement, no zoom. The same plain pure white background, no floor, no shadow. Flat 2D
+animation in the style of the image, the same flat colours and hard-edged shading.`
+
+| Clip | Action | Pick | Frames used |
+|---|---|---|---|
+| cast1 | slowly raises the staff while violet magic swirls round the crystal, swings it forward to the right and launches a small violet bolt out through the right edge, then returns to the pose | A (`ANqvLOZXJUzR…`) | 0–4.9 s |
+| cast2 | draws the free hand back while a violet orb grows in the palm, hurls it right like a small comet | A (`ANqvLOYWrlYu…`) | 0–5.0 s |
+| cast3 | plants the staff upright, two thin rings of violet runes circle the crystal, points it right and a small dark-violet projectile with a short trail streaks out (prompt also: "deep saturated violet magic, no white glare, no bright flash"); remade at your request, x4, pick E: media `ad3f05cd-5673-4ae2-a17d-a2236bf2ac1d` (`ANqvLOYSroGH…`). The first version (`ANqvLOY1-kW4…`, a big pale rune sphere) was dropped | E | 0–4.8 s |
+| defeat | struck by a blast from the right, staggers, drops the staff, collapses to her knees, head bowed | A (`ANqvLObGtwVU…`) | 2.1–6.1 s (after the blast, which is too white to cut out on a white background) |
+
+Cut with `cut-avatar.ps1 -Avatar sorceress -DefeatSheet -PocketMin 4 -FigureMargin 0.12` (crop to the
+figure, magic may run past the edges; white areas enclosed by magic (spell cores, the inside of rune
+rings) become a see-through tint of the magic instead of holes). Her frame has room above the head, so she is drawn
+with `scale = 1.16` (`Avatars.kt`). The Midjourney frames are kept in `anim/sorceress_mj/`.

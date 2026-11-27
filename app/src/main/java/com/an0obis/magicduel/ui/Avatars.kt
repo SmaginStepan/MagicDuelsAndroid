@@ -9,8 +9,10 @@ import com.an0obis.magicduel.R
  * every cast.
  *
  * [tipX], [tipY]: where the staff's glowing crystal is, as a share of the frame's width and height,
- * so cast glows and bolts start there. [glow]: the crystal's colour. [paid] avatars will be bought in
- * the store later; for now every avatar is free.
+ * so cast glows and bolts start there. [glow]: the crystal's colour. [scale]: the frame's height in
+ * the duel relative to the others', for a frame with extra room above the figure (Google Flow clips
+ * keep room for magic over the head), so every figure stands as tall. [paid] avatars will be bought
+ * in the store later; for now every avatar is free.
  */
 class Avatar(
     val id: String,
@@ -24,6 +26,7 @@ class Avatar(
     val tipY: Float,
     val glow: Int,
     val paid: Boolean = false,
+    val scale: Float = 1f,
 )
 
 object Avatars {
@@ -37,7 +40,9 @@ object Avatars {
         "sorceress", R.string.avatar_sorceress, R.drawable.avatar_sorceress,
         intArrayOf(R.drawable.avatar_sorceress_cast1, R.drawable.avatar_sorceress_cast2, R.drawable.avatar_sorceress_cast3),
         R.drawable.avatar_sorceress_defeat, R.drawable.avatar_sorceress_defeated,
-        tipX = 0.241f, tipY = 0.084f, glow = 0xFFB98CFF.toInt(),
+        // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); the frame has room for magic
+        // over her head, so it's drawn taller.
+        tipX = 0.238f, tipY = 0.223f, glow = 0xFFB98CFF.toInt(), scale = 1.16f,
     )
     val CONJURER = Avatar(
         "conjurer", R.string.avatar_conjurer, R.drawable.avatar_conjurer,
@@ -60,7 +65,8 @@ object Avatars {
  * An enemy mage's avatar (art/enemies/PLAN.md): a Midjourney character facing left, with
  * cybernetic parts that grow from level to level. It has an idle pose, one cast animation (48 frames
  * ending in a throw to the left) and a defeated pose for the victory card. [tipX], [tipY]: its
- * crystal, as a share of the frame.
+ * crystal, as a share of the frame. [scale]: the frame's height relative to the others', when its
+ * frame has extra room (bot_02's cast raises a ring of fire above its head), so the figures match.
  */
 class EnemyAvatar(
     val id: String,
@@ -70,13 +76,15 @@ class EnemyAvatar(
     val tipX: Float,
     val tipY: Float,
     val glow: Int,
+    val scale: Float = 1f,
 )
 
 object EnemyAvatars {
     /** By mage: the first mage (game level 3) wears the first. Mages without one yet are drawn. */
     val all = listOf(
         EnemyAvatar("bot_01", R.drawable.bot_01, R.drawable.bot_01_cast1, R.drawable.bot_01_defeated, 0.22f, 0.74f, 0xFF3FE0C8.toInt()),
-        EnemyAvatar("bot_02", R.drawable.bot_02, R.drawable.bot_02_cast1, R.drawable.bot_02_defeated, 0.19f, 0.25f, 0xFFFFA63C.toInt()),
+        // Cast made with Google Flow (Veo 3.1 Lite); its frame has room for the fire ring above the head.
+        EnemyAvatar("bot_02", R.drawable.bot_02, R.drawable.bot_02_cast1, R.drawable.bot_02_defeated, 0.21f, 0.37f, 0xFFFFA63C.toInt(), scale = 1.19f),
     )
 
     /** The avatar of the k-th mage (0 = the first), or null if it has none yet. */

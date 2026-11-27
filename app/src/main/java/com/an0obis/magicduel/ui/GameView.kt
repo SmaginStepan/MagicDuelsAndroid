@@ -1073,7 +1073,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** Where a bot's sprite is drawn, standing on [enemyFoot] centred on [x]. */
     private fun enemyFrame(out: RectF, x: Float, a: EnemyAvatar): RectF {
         val img = art.image(a.idleRes)
-        val h = enemyH * ENEMY_AVATAR_SCALE
+        val h = enemyH * ENEMY_AVATAR_SCALE * a.scale
         val w = h * img.width / img.height
         out.set(x - w / 2f, enemyFoot - h, x + w / 2f, enemyFoot)
         return out
@@ -1864,9 +1864,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         fill.shader = null
         val img = art.avatarIdle(avatar)
         val ih = avatarH - 0.7f * u
-        val iw = ih * img.width / img.height
+        val src = art.opaqueBounds(avatar.idleRes) // the figure, without the frame's empty room
+        val iw = ih * src.width() / src.height()
         rect.set(av.centerX() - iw / 2f, av.top + 0.08f * u, av.centerX() + iw / 2f, av.top + 0.08f * u + ih)
-        c.drawBitmap(img, null, rect, bitmapPaint)
+        c.drawBitmap(img, src, rect, bitmapPaint)
         label(c, s(avatar.nameRes), av.centerX(), av.bottom - 0.25f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER)
         stroke.color = withAlpha(GOLD, 150)
         stroke.strokeWidth = 0.04f * u
@@ -1934,9 +1935,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             fill.shader = null
             val img = art.avatarIdle(a)
             val ih = cardH - 0.75f * u
-            val iw = ih * img.width / img.height
+            val src = art.opaqueBounds(a.idleRes)
+            val iw = ih * src.width() / src.height()
             rect.set(r.centerX() - iw / 2f, r.top + 0.1f * u, r.centerX() + iw / 2f, r.top + 0.1f * u + ih)
-            c.drawBitmap(img, null, rect, bitmapPaint)
+            c.drawBitmap(img, src, rect, bitmapPaint)
             label(c, s(a.nameRes), r.centerX(), r.bottom - 0.3f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER)
             if (!a.paid) label(c, s(R.string.avatar_free), r.right - 0.15f * u, r.top + 0.35f * u, 0.22f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
             val chosen = a.id == avatar.id
@@ -2091,7 +2093,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** Where your avatar's frame is drawn, standing on [playerFoot] centred on [x]. */
     private fun avatarFrame(out: RectF, x: Float): RectF {
         val img = art.avatarIdle(avatar)
-        val h = playerH * AVATAR_SCALE
+        val h = playerH * AVATAR_SCALE * avatar.scale
         val w = h * img.width / img.height
         out.set(x - w / 2f, playerFoot - h, x + w / 2f, playerFoot)
         return out

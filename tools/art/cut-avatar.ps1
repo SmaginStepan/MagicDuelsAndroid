@@ -8,6 +8,8 @@
 #   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar dummy -NoIdle   dummy: defeat/ -> dummy_defeated.webp
 #   -PocketMin 4 also removes smaller enclosed bits of background (the sorceress: see PROMPTS.md)
 #   -Shadow removes a pale ground shadow under the feet (bot_02)
+#   -FigureMargin 0.1 crops to the figure (first frames and the defeated pose) plus 10% of the height,
+#       letting magic that fills the frame run past the edges (Google Flow clips: the sorceress)
 #
 # Each clip folder holds frame_00..NN.png. The white background is removed by flood-filling from the
 # image border through pixels close to the background colour, with a soft edge and the colour
@@ -15,7 +17,8 @@
 # through, so a pale glowing crystal stays. Every frame of every clip shares one crop, so the idle pose,
 # the animations and the defeated image line up exactly.
 param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
-      [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow)
+      [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow,
+      [double]$FigureMargin = 0)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -34,6 +37,7 @@ public static class AvatarCut {
     // colour, removed when at least PocketMin pixels (see Cut).
     static double PocketSeed = 18; static int PocketMin = 12;
     static bool Shadow = false;   // remove a pale ground shadow under the feet (see Cut)
+    const byte GlowAlpha = 110;   // opacity of the tint in white pockets inside magic (see Cut)
 
     static byte[] Read(Bitmap b) {
         BitmapData d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -88,6 +92,7 @@ public static class AvatarCut {
         // run diagonally (the sorceress's robe), which side-by-side links would split into specks.
         bool[] seen = new bool[W * H];
         var comp = new List<int>();
+        int[] glow = new int[W * H];   // 0, or 1 + the 0xRRGGBB tint of a pocket inside magic
         for (int s = 0; s < W * H; s++) {
             if (reached[s] || seen[s] || dist[s] >= PocketSeed) continue;
             comp.Clear();
@@ -102,7 +107,12 @@ public static class AvatarCut {
                     if (!seen[n] && !reached[n] && dist[n] < Soft) { seen[n] = true; q.Enqueue(n); }
                 }
             }
-            if (comp.Count >= PocketMin) foreach (int k in comp) reached[k] = true;
+            if (comp.Count < PocketMin) continue;
+            // White ringed by magic can be a spell's hot core or the background seen through a rune
+            // ring, and their sizes overlap: both become a soft see-through tint of the magic around
+            // them (its own colour), so a core glows and a ring gets a faint glowing fill.
+            int tint = MagicTint(px, comp, seen, W, H);
+            foreach (int k in comp) { reached[k] = true; if (tint >= 0) glow[k] = tint + 1; }
         }
         // A ground shadow Midjourney drew anyway (pale warm grey, a band under the feet): with -Shadow,
         // grow the background into pale, nearly colourless pixels in the bottom fifth of the frame,
@@ -128,11 +138,18 @@ public static class AvatarCut {
         for (int k = 0; k < W * H; k++) {
             int i = k * 4;
             if (shadow[k]) continue;
+            if (glow[k] != 0) {
+                int t = glow[k] - 1;
+                o[i] = (byte)(t & 255); o[i + 1] = (byte)((t >> 8) & 255); o[i + 2] = (byte)((t >> 16) & 255);
+                o[i + 3] = GlowAlpha;
+                continue;
+            }
             double a = reached[k] ? Math.Min(1.0, Math.Max(0.0, (dist[k] - Hard) / (Soft - Hard))) : 1.0;
             if (a <= 0) continue;
             for (int c = 0; c < 3; c++) o[i + c] = (byte)Math.Min(255, Math.Max(0, (px[i + c] - (1 - a) * bg[c]) / a));
             o[i + 3] = (byte)(a * 255);
         }
+        FillMagicCores(o, px, W, H);
         // Video compression blurs the white background a pixel or two into the figure's outline, which
         // shows as a light rim on the dark game background: trim two pixels off the outline (twice,
         // each pixel's alpha becomes the smallest in its 3x3 neighbourhood), then darken the pixels
@@ -148,7 +165,91 @@ public static class AvatarCut {
             }
             if (edge) for (int c = 0; c < 3; c++) e[k * 4 + c] = (byte)(e[k * 4 + c] * 0.55);
         }
+        // The tinted pockets keep their light colour: trimming and darkening are for the outline only.
+        for (int k = 0; k < W * H; k++) {
+            if (glow[k] == 0) continue;
+            int t = glow[k] - 1, i = k * 4;
+            e[i] = (byte)(t & 255); e[i + 1] = (byte)((t >> 8) & 255); e[i + 2] = (byte)((t >> 16) & 255);
+            e[i + 3] = GlowAlpha;
+        }
         return e;
+    }
+
+    // True when a near-white pocket is the hot core of a spell, not background: most pixels around it
+    // are bright and strongly coloured (violet glow, flames), while background trapped in the figure
+    // is ringed by robe, hair or skin. Such a pocket stays (it shows as the spell's white core).
+    // The tint for a pocket inside magic (see the pocket loop in Cut), as 0xRRGGBB in BGR byte order
+    // (b | g << 8 | r << 16), or -1 when the pocket isn't inside magic.
+    static int MagicTint(byte[] px, List<int> comp, bool[] inComp, int W, int H) {
+        int ring = 0, magic = 0; long sb = 0, sg = 0, sr = 0;
+        foreach (int k in comp) {
+            int x = k % W, y = k / W;
+            for (int dy = -2; dy <= 2; dy += 2) for (int dx = -2; dx <= 2; dx += 2) {
+                int xx = x + dx, yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+                int n = yy * W + xx;
+                if (inComp[n]) continue;
+                int i = n * 4;
+                int mx = Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])), mn = Math.Min(px[i], Math.Min(px[i + 1], px[i + 2]));
+                ring++;
+                if (mx >= 180 && mx - mn >= 35) { magic++; sb += px[i]; sg += px[i + 1]; sr += px[i + 2]; }
+            }
+        }
+        if (ring == 0 || magic * 2 <= ring) return -1;
+        int b = (int)(sb / magic), g = (int)(sg / magic), r = (int)(sr / magic);   // the magic's own colour
+        return b | g << 8 | r << 16;
+    }
+
+    static bool InsideMagic(byte[] px, List<int> comp, bool[] inComp, int W, int H) {
+        int ring = 0, magic = 0;
+        foreach (int k in comp) {
+            int x = k % W, y = k / W;
+            for (int dy = -2; dy <= 2; dy += 2) for (int dx = -2; dx <= 2; dx += 2) {
+                int xx = x + dx, yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+                int n = yy * W + xx;
+                if (inComp[n]) continue;
+                int i = n * 4;
+                int mx = Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])), mn = Math.Min(px[i], Math.Min(px[i + 1], px[i + 2]));
+                ring++;
+                if (mx >= 180 && mx - mn >= 35) magic++;   // also pale lavender glow around a white core
+            }
+        }
+        return ring > 0 && magic * 2 > ring;
+    }
+
+    // A spell's white-hot core is as white as the background, so when the magic touches the frame's
+    // edge the background fill flows into it and leaves dark holes in the glow. Fill a see-through
+    // pixel back in (as the video's own colour, opaque) when bright coloured magic surrounds it: in at
+    // least 7 of 8 directions there is such a pixel within 16 px (a small hole; the inside of a rune ring
+    // is wider and stays see-through). Background beside the magic has it
+    // on one side only, so it stays clear.
+    static void FillMagicCores(byte[] o, byte[] px, int W, int H) {
+        int[] ddx = { 1, 1, 0, -1, -1, -1, 0, 1 }, ddy = { 0, 1, 1, 1, 0, -1, -1, -1 };
+        Func<int, bool> magic = n => {
+            int i = n * 4;
+            // judged on the video's colour, not the cut's alpha: pale glow around a core is partly see-through too
+            int mx = Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])), mn = Math.Min(px[i], Math.Min(px[i + 1], px[i + 2]));
+            return mx >= 180 && mx - mn >= 35;
+        };
+        // The fill is a light tint of the surrounding magic (half its colour, half white), a little
+        // see-through: small cores read as hot centres, large white areas as glow rather than paper.
+        var fill = new List<int[]>();
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int k = y * W + x;
+            if (o[k * 4 + 3] >= 128) continue;
+            int hits = 0, sb = 0, sg = 0, sr = 0;
+            for (int d = 0; d < 8 && hits + (8 - d) >= 7; d++) {
+                for (int r = 1; r <= 16; r++) {
+                    int xx = x + ddx[d] * r, yy = y + ddy[d] * r;
+                    if (xx < 0 || yy < 0 || xx >= W || yy >= H) break;
+                    int n = yy * W + xx;
+                    if (magic(n)) { hits++; sb += px[n * 4]; sg += px[n * 4 + 1]; sr += px[n * 4 + 2]; break; }
+                }
+            }
+            if (hits >= 7) fill.Add(new[] { k, (sb / hits + 255) / 2, (sg / hits + 255) / 2, (sr / hits + 255) / 2 });
+        }
+        foreach (int[] f in fill) { int i = f[0] * 4; o[i] = (byte)f[1]; o[i + 1] = (byte)f[2]; o[i + 2] = (byte)f[3]; o[i + 3] = 215; }
     }
 
     static byte[] Erode(byte[] o, int W, int H) {
@@ -192,7 +293,7 @@ public static class AvatarCut {
     // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
     // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
     // defeatIndex) unless null. All share one crop.
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow) {
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin) {
         PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow;
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
@@ -203,9 +304,20 @@ public static class AvatarCut {
             casts.Add(frames);
         }
         int x0 = int.MaxValue, y0 = int.MaxValue, x1 = -1, y1 = -1;
-        foreach (var frames in casts) foreach (byte[] f in frames) Bounds(f, W, H, ref x0, ref y0, ref x1, ref y1);
-        int m = (int)(H * 0.02);
-        Rectangle crop = Rectangle.FromLTRB(Math.Max(0, x0 - m), Math.Max(0, y0 - m), Math.Min(W, x1 + m + 1), Math.Min(H, y1 + 2));
+        Rectangle crop;
+        if (figureMargin > 0) {
+            // Frame the figure, not its magic: bounds of each clip's first frame (the pose) and the
+            // defeat's last frame, widened by figureMargin of the frame height; effects that reach
+            // further (a bolt flying out, a blast filling the frame) are cut at the edges.
+            foreach (var frames in casts) Bounds(frames[0], W, H, ref x0, ref y0, ref x1, ref y1);
+            if (defeatIndex >= 0) { var d = casts[defeatIndex]; Bounds(d[d.Count - 1], W, H, ref x0, ref y0, ref x1, ref y1); }
+            int fm = (int)(H * figureMargin);
+            crop = Rectangle.FromLTRB(Math.Max(0, x0 - fm), Math.Max(0, y0 - fm), Math.Min(W, x1 + fm + 1), Math.Min(H, y1 + 2));
+        } else {
+            foreach (var frames in casts) foreach (byte[] f in frames) Bounds(f, W, H, ref x0, ref y0, ref x1, ref y1);
+            int m = (int)(H * 0.02);
+            crop = Rectangle.FromLTRB(Math.Max(0, x0 - m), Math.Max(0, y0 - m), Math.Min(W, x1 + m + 1), Math.Min(H, y1 + 2));
+        }
         int fw = (int)Math.Round(height * crop.Width / (double)crop.Height);
         if (!string.IsNullOrEmpty(outIdle))
             using (Bitmap o = Scale(casts[0][0], W, H, crop, fw, height)) o.Save(outIdle, ImageFormat.Png);
@@ -243,5 +355,5 @@ $sheets = @($dirs | ForEach-Object {
 })
 $idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
 $defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
-[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent)
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin)
 & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })
