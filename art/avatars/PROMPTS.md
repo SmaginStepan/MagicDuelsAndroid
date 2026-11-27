@@ -107,7 +107,9 @@ animation in the style of the image, the same flat colours and hard-edged shadin
 | cast3 | plants the staff upright, two thin rings of violet runes circle the crystal, points it right and a small dark-violet projectile with a short trail streaks out (prompt also: "deep saturated violet magic, no white glare, no bright flash"); remade at your request, x4, pick E: media `ad3f05cd-5673-4ae2-a17d-a2236bf2ac1d` (`ANqvLOYSroGH…`). The first version (`ANqvLOY1-kW4…`, a big pale rune sphere) was dropped | E | 0–4.8 s |
 | defeat | struck by a blast from the right, staggers, drops the staff, collapses to her knees, head bowed | A (`ANqvLObGtwVU…`) | 2.1–6.1 s (after the blast, which is too white to cut out on a white background) |
 
-Cut with `cut-avatar.ps1 -Avatar sorceress -DefeatSheet -PocketMin 4 -FigureMargin 0.12` (crop to the
-figure, magic may run past the edges; white areas enclosed by magic (spell cores, the inside of rune
-rings) become a see-through tint of the magic instead of holes). Her frame has room above the head, so she is drawn
-with `scale = 1.16` (`Avatars.kt`). The Midjourney frames are kept in `anim/sorceress_mj/`.
+Cut with `cut-avatar.ps1 -Avatar sorceress -DefeatSheet -PocketMin 4 -FigureMargin 0.12 -NoWhite` (crop to the
+figure, magic may run past the edges). `-NoWhite` erases the pale white and light-grey parts of the
+magic (a swirl's middle, an orb's rim, the inside of the rune rings, spell cores): on the dark game
+background they read as flat white patches, so the magic keeps only its coloured parts and is
+see-through elsewhere. Her frame has room above the head, so she is drawn with `scale = 1.16`
+(`Avatars.kt`). The Midjourney frames are kept in `anim/sorceress_mj/`.

@@ -10,6 +10,7 @@
 #   -Shadow removes a pale ground shadow under the feet (bot_02)
 #   -FigureMargin 0.1 crops to the figure (first frames and the defeated pose) plus 10% of the height,
 #       letting magic that fills the frame run past the edges (Google Flow clips: the sorceress)
+#   -NoWhite erases pale whitish parts of the magic, which read as flat white patches in the game
 #
 # Each clip folder holds frame_00..NN.png. The white background is removed by flood-filling from the
 # image border through pixels close to the background colour, with a soft edge and the colour
@@ -18,7 +19,7 @@
 # the animations and the defeated image line up exactly.
 param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
       [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow,
-      [double]$FigureMargin = 0)
+      [double]$FigureMargin = 0, [switch]$NoWhite)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -37,6 +38,7 @@ public static class AvatarCut {
     // colour, removed when at least PocketMin pixels (see Cut).
     static double PocketSeed = 18; static int PocketMin = 12;
     static bool Shadow = false;   // remove a pale ground shadow under the feet (see Cut)
+    static bool NoWhite = false;   // erase pale whitish areas of magic (see Cut)
     const byte GlowAlpha = 110;   // opacity of the tint in white pockets inside magic (see Cut)
 
     static byte[] Read(Bitmap b) {
@@ -112,7 +114,7 @@ public static class AvatarCut {
             // ring, and their sizes overlap: both become a soft see-through tint of the magic around
             // them (its own colour), so a core glows and a ring gets a faint glowing fill.
             int tint = MagicTint(px, comp, seen, W, H);
-            foreach (int k in comp) { reached[k] = true; if (tint >= 0) glow[k] = tint + 1; }
+            foreach (int k in comp) { reached[k] = true; if (tint >= 0 && !NoWhite) glow[k] = tint + 1; }   // -NoWhite: see-through
         }
         // A ground shadow Midjourney drew anyway (pale warm grey, a band under the feet): with -Shadow,
         // grow the background into pale, nearly colourless pixels in the bottom fifth of the frame,
@@ -171,6 +173,15 @@ public static class AvatarCut {
             int t = glow[k] - 1, i = k * 4;
             e[i] = (byte)(t & 255); e[i + 1] = (byte)((t >> 8) & 255); e[i + 2] = (byte)((t >> 16) & 255);
             e[i + 3] = GlowAlpha;
+        }
+        // With -NoWhite, pale whitish areas go: the white or lavender-white parts of magic (a swirl's
+        // middle, an orb's rim, the tint in white pockets) that read as flat white patches in the game.
+        // Saturated magic stays, and so does the figure (skin and robes are darker or more coloured).
+        if (NoWhite) for (int k = 0; k < W * H; k++) {
+            int i = k * 4;
+            if (e[i + 3] == 0) continue;
+            int mx = Math.Max(e[i], Math.Max(e[i + 1], e[i + 2])), mn = Math.Min(e[i], Math.Min(e[i + 1], e[i + 2]));
+            if ((mn >= 185 && mx - mn <= 70) || (mn >= 150 && mx - mn <= 45)) e[i + 3] = 0;   // whitish, or light grey
         }
         return e;
     }
@@ -293,8 +304,8 @@ public static class AvatarCut {
     // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
     // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
     // defeatIndex) unless null. All share one crop.
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin) {
-        PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow;
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin, bool noWhite) {
+        PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow; NoWhite = noWhite;
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
         foreach (string dir in dirs) {
@@ -355,5 +366,5 @@ $sheets = @($dirs | ForEach-Object {
 })
 $idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
 $defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
-[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin)
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin, $NoWhite.IsPresent)
 & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })
