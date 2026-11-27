@@ -457,15 +457,29 @@ class BattleTest {
     }
 
     @Test
-    fun aShotBlockedByAWallBouncesBack() {
-        // The stretch in front of the wall is full: the shot backfires.
+    fun yourShotPushesThroughAWallLikeTheBots() {
+        // The stretch in front of the wall is full: instead of backfiring, your shot pushes the globes
+        // one cell and the front one breaks into the wall's cell, as a bot's shot does.
         val board = Board.parse(".....", ".....", ".....", ".....", "FW#..")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[4, 0] = Element.EARTH
+        assertTrue(b.tryCast(4, 0))
+        val events = runCollecting(b, shotTime(4))
+        assertTrue(events.none { it is BattleEvent.Backfired || it is BattleEvent.BackfireHit })
+        assertTrue(events.contains(BattleEvent.WallsBroken(listOf(Cell(4, 2)), byShot = true)))
+        assertEquals(Rules.PLAYER_HP, b.player.hp)
+        assertEquals("EFW..", board.describe()[4])
+    }
+
+    @Test
+    fun yourShotStillBouncesOffAFullRowWithoutWalls() {
+        val board = Board.parse(".....", ".....", ".....", ".....", "FWAFW")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
         b.spells[4, 0] = Element.EARTH
         assertTrue(b.tryCast(4, 0))
         run(b, shotTime(4))
         assertEquals(Rules.PLAYER_HP - Rules.BACKFIRE_DAMAGE, b.player.hp)
-        assertEquals("FW#..", board.describe()[4])
+        assertEquals("FWAFW", board.describe()[4])
     }
 
     @Test

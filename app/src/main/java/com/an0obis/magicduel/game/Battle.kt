@@ -15,8 +15,8 @@ enum class Side {
 
     /**
      * Bot shots never backfire: into a full row they push anyway, and the globe pushed off the far
-     * edge hits the player; if a wall blocks them, the push breaks the first wall instead. Player
-     * shots into a full row (or a full stretch in front of a wall) backfire.
+     * edge hits the player. Player shots into a full row backfire. If a wall blocks the row (the
+     * stretch in front of it is full), anyone's shot pushes anyway and breaks that wall.
      */
     val pushesFullRows: Boolean get() = this == ENEMY
 }
@@ -449,8 +449,9 @@ class Battle(
         val fromLeft = p.owner.fromLeft
         val full = !board.canInsert(p.lane, fromLeft)
         val wall = board.firstWall(p.lane, fromLeft)
-        if (full && !p.owner.pushesFullRows) {
-            // No free space in the row (or in front of its first wall): your spell strikes you.
+        if (full && wall < 0 && !p.owner.pushesFullRows) {
+            // No free space in a row without walls: your spell strikes you. (In front of a wall the
+            // shot pushes anyway, for you and the bot alike, and breaks the wall: see below.)
             p.state = Projectile.State.BOUNCING
             events += BattleEvent.Backfired(p.owner, p.lane)
             return
@@ -468,7 +469,7 @@ class Battle(
         }
         val col = when {
             full && wall >= 0 -> {
-                // Blocked by a wall, but this caster (the bot) pushes anyway: the globes in front of
+                // Blocked by a wall, but the shot pushes anyway (yours and the bot's): the globes in front of
                 // the wall move one cell, the front one breaking into the wall's cell.
                 breakingWall = Cell(p.lane, wall)
                 board.pushThroughWall(p.lane, fromLeft, shot)

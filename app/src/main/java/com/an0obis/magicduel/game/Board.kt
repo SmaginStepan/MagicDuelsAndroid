@@ -150,7 +150,7 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
 
     /**
      * A shot into [row] whose stretch in front of the first wall is full ([canInsert] is false there),
-     * from a caster that pushes anyway (the bot): the globes in front of the wall move one cell toward
+     * from either side (a shot never bounces off a wall): the globes in front of the wall move one cell toward
      * it, the front one into the wall's cell, and the shot takes the entry edge cell. The push breaks
      * that wall; like [insert], it stays in [walls] until the screen has shown the hit, so call
      * [removeWall] for the column returned by [firstWall] then. Returns the shot's column.

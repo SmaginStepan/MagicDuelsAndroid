@@ -70,10 +70,11 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - A shot that reaches a wall itself **breaks it and takes its cell**, going no further:
   `· · ▓ G G` + X → `· · X G G`. If there are globes in front of the wall, the wall holds like the field
   edge and the globes are packed against it: `· G ▓ · ·` + X → `X G ▓ · ·`.
-- If the stretch in front of the wall is already full, **your** shot can't go anywhere and **bounces back** at
-  you (10 damage). A **bot's** shot pushes anyway and **breaks the first wall**: the globes in front of
-  it move one cell, the front one into the wall's cell, and the shot takes the entry cell. Example from
-  the right: `E A ▓ W F` + X → `E A W F X`. (A full row without a wall still pushes a globe out at you.)
+- If the stretch in front of the wall is already full, the shot **pushes anyway and breaks the first wall**,
+  yours and the bot's alike: the globes in front of it move one cell, the front one into the wall's cell,
+  and the shot takes the entry cell. Example from the left: `F W ▓ · ·` + X → `X F W · ·`; from the right:
+  `E A ▓ W F` + X → `E A W F X`. Only a full row **without** a wall still bounces your shot back at you (10
+  damage), or, for a bot's shot, pushes a globe out at you.
 - An explosion **breaks the walls right next to it**: left, right, above and below (not diagonally).
   Whatever stood on a broken wall then falls.
 - Walls don't count for lines of 3: a wall between two globes breaks the line.

@@ -63,7 +63,7 @@
     <string name="tut_damage">Each exploded globe deals 5 damage. Falling globes can set off chain explosions: ×2, ×3…</string>
     <string name="tut_backfire">That row was full, so your spell backfired and hit you. Aim at rows with space.</string>
     <string name="tut_walls_tap">New: walls! Tap a wall button above the field. After a long cast, magic glass fills every empty cell of that column.</string>
-    <string name="tut_walls_break">A shot that reaches a wall breaks it and stops there. Globes pushed against a wall stop too. An explosion breaks the walls next to it.</string>
+    <string name="tut_walls_break">A shot that reaches a wall breaks it and stops there. Globes pushed against a wall stop too, but if the row in front of it is full, the push breaks the wall. An explosion breaks the walls next to it.</string>
     <string name="avatar">Avatar</string>
     <string name="choose_avatar">Choose your avatar</string>
     <string name="avatar_mage">Archmage</string>
