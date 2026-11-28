@@ -215,6 +215,20 @@ class BattleTest {
     }
 
     @Test
+    fun yourShotBecomesYourGlobeAndStartingGlobesBelongToNobody() {
+        val board = Board.parse(".....", ".....", ".....", ".....", "W....")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.spells[3, 0] = Element.FIRE
+        assertTrue(b.tryCast(3, 0))
+        run(b, shotTime(3))
+        val owners = HashMap<Element, Side?>()
+        b.board.forEachGlobe { _, _, g -> owners[g.element] = g.owner }
+        assertEquals(Side.PLAYER, owners[Element.FIRE]) // drawn in your element pack
+        assertTrue(Element.WATER in owners)
+        assertNull(owners[Element.WATER]) // the starting globe keeps the classic look
+    }
+
+    @Test
     fun shotIntoFullRowBackfiresOnCaster() {
         val board = Board.parse(".....", ".....", ".....", ".....", "FWEAF")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)

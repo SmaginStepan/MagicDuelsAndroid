@@ -115,13 +115,21 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   the menu, and the popup is waiting when you return to the duel. Revives work against the dummies too
   and don't change the leaderboard.
 - **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
-  builds until Google Play billing is in) and the **avatars**.
+  builds until Google Play billing is in), the **avatars** and the **element packs**.
 - **Avatars**: only the Archmage is free. The Sorceress costs **3** essence and the Conjurer **5**;
   unlocked once, they are yours for good. In the shop and in "Choose your avatar" a locked one shows
   its price (dimmed in the picker); a tap opens the unlock popup (the figure, its price, your essence,
   Cancel and Unlock, or Shop instead when you are short). Unlocking puts the avatar on. An avatar you
   own is put on with a tap (the shop marks it Owned, or Chosen when it is yours now). A paid avatar
   chosen before avatars had prices goes back to the Archmage.
+- **Element packs** change how **your** magic looks (art/packs/PROMPTS.md): your flying shots, the
+  globes they freeze into (also when pushed out of a row) and your walls. The bot's shots, globes and
+  walls and the globes a duel starts with keep the classic look; the rules stay the same. **Classic** is free; **Dark Spikes** (spiked obsidian globes, spiked iron
+  balls flying with each element's trail, spiked obsidian walls) costs **25** essence. The shop shows
+  each pack with its four globes; unlocking works as for avatars (the popup shows its globes, a wall and
+  a shot) and puts the pack to use at once, in the current duel too. A pack you own is used with a tap.
+  With a pack's globes your landed shot shows a frost ring instead of the classic freeze clip. Unlocked
+  packs and the one in use are saved, also through Restart game.
 
 ## Leaderboard
 - An online board of every player's **highest level** and name, on the ScoreServer service

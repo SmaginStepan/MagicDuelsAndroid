@@ -1,10 +1,11 @@
 ﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png …).
 #   Old use, one element:  anim-sheets.ps1 -Art <art dir> -Res <drawable dir> -Element water [-ProjectilesOnly]
-#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall -Frames <dir> -Out <png or webp>
+#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall|spikyglobe|spikyshot -Frames <dir> -Out <png or webp>
 #   Freeze (shot → globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #     where (Cx, Cy) and D are the globe's centre and diameter in the video's end frame (video pixels).
 param([string]$Art, [string]$Res, [string]$Element = "fire", [switch]$ProjectilesOnly,
-      [string]$Kind, [string]$Frames, [string]$Out, [double]$Cx, [double]$Cy, [double]$D, [string]$Track, [switch]$NoLock, [double]$HeadFrac = 0.45)
+      [string]$Kind, [string]$Frames, [string]$Out, [double]$Cx, [double]$Cy, [double]$D, [string]$Track, [switch]$NoLock, [double]$HeadFrac = 0.45,
+      [double]$BallBack = 0.2, [double]$BallR = 0.2)
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
 using System;
@@ -107,6 +108,104 @@ public static class AnimSheet {
         }
     }
 
+    // Background key for dark subjects (element packs: a black obsidian orb, a black iron ball) on a dark
+    // but tinted background, where a brightness key would wipe out the subject too. The background's
+    // colour is the average of the frame's corners; it is flood-filled from the frame's edges through
+    // pixels that differ from it by less than soft (fully clear under hard, a soft edge in between, the
+    // colour un-blended from the background). Pixels within protR of (protCx, protCy) are never filled:
+    // the orb's dark body, which can be as dark as the background in places.
+    static void FloodKey(byte[] px, int W, int H, int s, double hard, double soft, double protCx, double protCy, double protR) {
+        double br = 0, bgc = 0, bb = 0; int nb = 0;
+        int patch = Math.Max(4, Math.Min(W, H) / 40);
+        foreach (int[] c in new[] { new[] { 0, 0 }, new[] { W - patch, 0 }, new[] { 0, H - patch }, new[] { W - patch, H - patch } })
+            for (int y = c[1]; y < c[1] + patch; y++) for (int x = c[0]; x < c[0] + patch; x++) {
+                int i = y * s + x * 4; bb += px[i]; bgc += px[i + 1]; br += px[i + 2]; nb++;
+            }
+        bb /= nb; bgc /= nb; br /= nb;
+        Func<int, double> dist = i => Math.Max(Math.Abs(px[i] - bb), Math.Max(Math.Abs(px[i + 1] - bgc), Math.Abs(px[i + 2] - br)));
+        Func<int, int, bool> prot = (x, y) => protR > 0 && (x - protCx) * (x - protCx) + (y - protCy) * (y - protCy) < protR * protR;
+        bool[] seen = new bool[W * H];
+        var q = new System.Collections.Generic.Queue<int>();
+        Action<int, int> push = (x, y) => {
+            int k = y * W + x;
+            if (seen[k] || prot(x, y) || dist(y * s + x * 4) >= soft) return;
+            seen[k] = true; q.Enqueue(k);
+        };
+        for (int x = 0; x < W; x++) { push(x, 0); push(x, H - 1); }
+        for (int y = 0; y < H; y++) { push(0, y); push(W - 1, y); }
+        while (q.Count > 0) {
+            int k = q.Dequeue(), x = k % W, y = k / W;
+            if (x > 0) push(x - 1, y);
+            if (x < W - 1) push(x + 1, y);
+            if (y > 0) push(x, y - 1);
+            if (y < H - 1) push(x, y + 1);
+        }
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int i = y * s + x * 4;
+            if (!seen[y * W + x]) { px[i + 3] = 255; continue; }
+            double a = Math.Min(1.0, Math.Max(0.0, (dist(i) - hard) / (soft - hard)));
+            a = a * a * (3 - 2 * a);
+            if (a > 0) {
+                px[i] = (byte)Math.Max(0, Math.Min(255, bb + (px[i] - bb) / a));
+                px[i + 1] = (byte)Math.Max(0, Math.Min(255, bgc + (px[i + 1] - bgc) / a));
+                px[i + 2] = (byte)Math.Max(0, Math.Min(255, br + (px[i + 2] - br) / a));
+            }
+            px[i + 3] = (byte)(a * 255);
+        }
+    }
+
+    // A spiked globe (element packs): like Globe, but the orb is dark and spikes stick out past its body,
+    // so instead of a hard circle the background is flood-keyed away (FloodKey) with the body protected,
+    // and the window reaches the spike tips (1.16 × the bright radius, which takes in their lit tips; the
+    // body is protected within 0.8 × it), fading out at its
+    // round edge.
+    public static string SpikyGlobe(string dir, string dst, int size, int threshold) {
+        string[] files = Frames(dir);
+        double cx, cy, r;
+        int W, H;
+        using (Bitmap f0 = new Bitmap(files[0])) {
+            W = f0.Width; H = f0.Height;
+            int s;
+            byte[] px = Read(f0, out s);
+            int[] cols = new int[W], rows = new int[H];
+            for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+                int i = y * s + x * 4;
+                int l = (px[i + 2] * 299 + px[i + 1] * 587 + px[i] * 114) / 1000;
+                if (l > threshold) { cols[x]++; rows[y]++; }
+            }
+            int need = Math.Max(3, H / 100);
+            int x0 = 0; while (x0 < W - 1 && cols[x0] < need) x0++;
+            int x1 = W - 1; while (x1 > 0 && cols[x1] < need) x1--;
+            int y0 = 0; while (y0 < H - 1 && rows[y0] < need) y0++;
+            int y1 = H - 1; while (y1 > 0 && rows[y1] < need) y1--;
+            cx = (x0 + x1) / 2.0; cy = (y0 + y1) / 2.0; r = ((x1 - x0) + (y1 - y0)) / 4.0;
+        }
+        double R = Math.Min(r * 1.16, Math.Min(Math.Min(cx, W - cx), Math.Min(cy, H - cy)));
+        Rectangle crop = new Rectangle((int)(cx - R), (int)(cy - R), (int)(2 * R), (int)(2 * R));
+        using (Bitmap sheet = new Bitmap(Cols * size, Rows * size, PixelFormat.Format32bppArgb)) {
+            using (Graphics g = Hq(sheet))
+                for (int k = 0; k < files.Length && k < Cols * Rows; k++)
+                    using (Bitmap f = new Bitmap(files[k])) {
+                        int s;
+                        byte[] px = Read(f, out s);
+                        FloodKey(px, f.Width, f.Height, s, 8, 36, cx, cy, r * 0.8);
+                        using (Bitmap keyed = FromBytes(px, f.Width, f.Height))
+                            DrawInto(g, keyed, crop, new Rectangle((k % Cols) * size, (k / Cols) * size, size, size));
+                    }
+            int st;
+            byte[] op = Read(sheet, out st);
+            double c = size / 2.0, edge = size * 0.06;
+            for (int y = 0; y < sheet.Height; y++) for (int x = 0; x < sheet.Width; x++) {
+                double dx = (x % size) + 0.5 - c, dy = (y % size) + 0.5 - c;
+                double a = Math.Min(1.0, Math.Max(0.0, (c - Math.Sqrt(dx * dx + dy * dy)) / edge));
+                a = a * a * (3 - 2 * a);
+                op[y * st + x * 4 + 3] = (byte)(op[y * st + x * 4 + 3] * a);
+            }
+            using (Bitmap o = FromBytes(op, sheet.Width, sheet.Height)) o.Save(dst, ImageFormat.Png);
+        }
+        return String.Format("{0} frames, body c=({1:F0},{2:F0}) r={3:F0}, window r={4:F0}", files.Length, cx, cy, r, R);
+    }
+
     // The projectile's head: its front edge (the right-most column that is at least 30% as dense as
     // the densest column) and the vertical centre of the last headW columns behind that edge.
     static void Head(byte[] px, int W, int H, int s, int headW, out double front, out double centreY) {
@@ -129,7 +228,7 @@ public static class AnimSheet {
     // Projectile: key every frame, then lock the head in place — each frame is shifted so its head sits
     // where the median frame has it. In the game the head then moves at exactly the flight speed, in a
     // straight line, while the tail keeps its own animation. One shared crop for all frames.
-    public static string Projectile(string dir, string dst, int frameHeight, int lo, int hi, bool lockHead = true, double headFrac = HeadFrac) {
+    public static string Projectile(string dir, string dst, int frameHeight, int lo, int hi, bool lockHead = true, double headFrac = HeadFrac, bool flood = false, double ballBack = 0.2, double ballR = 0.2) {
         string[] files = Frames(dir);
         int n = files.Length, W0 = 0, H0 = 0;
         byte[][] keyed = new byte[n][];
@@ -139,7 +238,16 @@ public static class AnimSheet {
                 int s;
                 W0 = b.Width; H0 = b.Height;
                 byte[] px = Read(b, out s);
-                Key(px, W0, H0, s, lo, hi);
+                if (flood) {
+                    // A dark spiked ball: find the head first (from what differs clearly from the
+                    // background) and protect a ball-sized circle there, so the fill can't leak in
+                    // through its dark spikes.
+                    double hx, hy;
+                    byte[] probe = (byte[])px.Clone();
+                    FloodKey(probe, W0, H0, s, 16, 34, 0, 0, 0);
+                    Head(probe, W0, H0, s, (int)(H0 * 0.35), out hx, out hy);
+                    FloodKey(px, W0, H0, s, 16, 34, hx - H0 * ballBack, hy, H0 * ballR);
+                } else Key(px, W0, H0, s, lo, hi);
                 Head(px, W0, H0, s, (int)(H0 * 0.35), out fx[k], out fy[k]);
                 keyed[k] = px;
             }
@@ -398,6 +506,9 @@ if ($Kind) {
     switch ($Kind) {
         "hit"        { "hit:        " + [AnimSheet]::Hit($Frames, $Out, 256, 28, 110) }
         "wall"       { "wall:       " + [AnimSheet]::Wall($Frames, $Out, 256, 28, 110) }
+        # Element packs (art/packs/PROMPTS.md): dark spiked subjects on a tinted dark background.
+        "spikyglobe" { "spikyglobe: " + [AnimSheet]::SpikyGlobe($Frames, $Out, 128, 48) }
+        "spikyshot"  { "spikyshot:  " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac, $true, $BallBack, $BallR) }
         "globe"      { "globe:      " + [AnimSheet]::Globe($Frames, $Out, 128, 48) }
         "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac) }
         # Matches Art.FREEZE_GLOBE, FREEZE_ASPECT, FREEZE_COLS and FREEZE_ROWS in the game; the clip starts

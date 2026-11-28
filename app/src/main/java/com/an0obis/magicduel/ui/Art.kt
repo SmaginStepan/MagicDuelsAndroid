@@ -36,6 +36,9 @@ class Art(private val res: Resources, private val packageName: String) {
         /** Most animation variants per element and kind (sheets _anim, _anim2 … _anim4). */
         const val MAX_VARIANTS = 4
 
+        /** A resource prefix that names no art: a pack's globe has no freeze clip. */
+        private const val NO_ART = "noart_"
+
         // Freeze sheets (shot → globe), see [freezeFrames].
         const val FREEZE_COLS = 4
         const val FREEZE_ROWS = 4
@@ -187,29 +190,46 @@ class Art(private val res: Resources, private val packageName: String) {
      * Draws a crystal globe with the element sealed inside into [dst] (square), with [paint] (its
      * alpha fades the whole globe): a soft aura in the element's colour and the globe at 88% of the
      * size. [look] picks one of the element's animation variants and [frame] the animation frame
-     * (any number; it wraps around).
+     * (any number; it wraps around). [mine]: your globe (from your shot), which wears your element
+     * pack; everything else (the bot's, the duel's starting globes) keeps the classic look. A pack's
+     * globe (dark, smaller than a glass orb, with spikes) gets a fainter aura that hugs its body: at full
+     * strength a pale one (air) showed as a whitish disc.
      */
-    fun drawGlobe(c: Canvas, e: Element, dst: RectF, frame: Int, look: Int, paint: Paint) {
-        c.drawBitmap(aura(e), null, dst, paint)
+    fun drawGlobe(c: Canvas, e: Element, dst: RectF, frame: Int, look: Int, paint: Paint, mine: Boolean = true) {
+        val prefix = prefixFor(Kind.GLOBE, e, mine)
+        if (prefix.isEmpty()) {
+            c.drawBitmap(aura(e), null, dst, paint)
+        } else {
+            val base = paint.alpha
+            val a = dst.width() * 0.12f
+            inner.set(dst.left + a, dst.top + a, dst.right - a, dst.bottom - a)
+            paint.alpha = (base * (if (e == Element.AIR) 0.3f else 0.55f)).toInt()
+            c.drawBitmap(aura(e), null, inner, paint)
+            paint.alpha = base
+        }
         val inset = dst.width() * 0.06f
         inner.set(dst.left + inset, dst.top + inset, dst.right - inset, dst.bottom - inset)
-        sheet(Kind.GLOBE, e, look).draw(c, frame, inner, paint)
+        sheet(Kind.GLOBE, e, look, prefix).draw(c, frame, inner, paint)
     }
 
-    /** The flying projectile for [e], head on the right; [look] picks an animation variant. */
-    fun projectile(e: Element, look: Int): Anim = sheet(Kind.PROJECTILE, e, look)
+    /**
+     * The flying projectile for [e], head on the right; [look] picks an animation variant. [mine]: your
+     * shot, in your element pack's look (the bot's shots keep the classic one).
+     */
+    fun projectile(e: Element, look: Int, mine: Boolean = true): Anim =
+        sheet(Kind.PROJECTILE, e, look, prefixFor(Kind.PROJECTILE, e, mine))
 
     /** Every element has globe and shot sheets (orb_<element>_anim…, proj_<element>_anim…). */
-    private fun sheet(kind: Kind, e: Element, look: Int): Anim =
-        checkNotNull(anim(kind, e, variant(kind, e, look))) { "no $kind animation sheet for $e" }
+    private fun sheet(kind: Kind, e: Element, look: Int, prefix: String): Anim =
+        checkNotNull(anim(kind, e, variant(kind, e, look, prefix), prefix)) { "no $kind animation sheet for $e" }
 
     /**
      * The landed shot freezing into a globe: [FREEZE_COLS] × [FREEZE_ROWS] frames, [FREEZE_ASPECT]
      * times as wide as tall. The comet's head (and the globe it becomes) is centred half a frame
      * height in from the right edge, the globe [FREEZE_GLOBE] of the height across. Null if the
-     * element has no freeze sheet.
+     * element has no freeze sheet, or for your shot when your element pack has its own globe ([mine]).
      */
-    fun freeze(e: Element): Anim? = anim(Kind.FREEZE, e, 0)
+    fun freeze(e: Element, mine: Boolean = true): Anim? = anim(Kind.FREEZE, e, 0, prefixFor(Kind.FREEZE, e, mine))
 
     /**
      * The burst where magic of [e] hits a duellist: 16 square frames (4×4 sheet `hit_<element>`),
@@ -248,29 +268,65 @@ class Art(private val res: Resources, private val packageName: String) {
     @Volatile
     var hardwareBitmaps = false
 
-    private val variantCounts = ConcurrentHashMap<Pair<Kind, Element>, Int>()
+    private val variantCounts = ConcurrentHashMap<String, Int>()
     private val anims = ConcurrentHashMap<String, Any>()
     private val noSheet = Any()
     private val auras = HashMap<Element, Bitmap>()
     private val inner = RectF()
 
+    /**
+     * The element pack whose globes, shots and walls are drawn (art/packs/PROMPTS.md). An element the
+     * pack has no art for keeps the classic look. A pack's shots don't play the classic freeze clip
+     * (it ends on the classic globe): the frost ring shows instead. Changing the pack frees the old
+     * pack's decoded sheets.
+     */
+    @Volatile
+    var pack: ElementPack = ElementPacks.CLASSIC
+        set(value) {
+            if (field.id == value.id) return
+            field = value
+            prefixes.clear()
+            anims.clear()
+            variantCounts.clear()
+            wallBlocks.clear()
+            wallBlockSources.clear()
+            wallIds = null
+        }
+
+    private val prefixes = ConcurrentHashMap<String, String>()
+
     @Suppress("DiscouragedApi")
-    private fun sheetId(kind: Kind, e: Element, variant: Int): Int {
+    private fun sheetId(kind: Kind, e: Element, variant: Int, prefix: String): Int {
         val el = e.name.lowercase()
         val name = when (kind) {
             Kind.GLOBE -> "orb_${el}_anim"
             Kind.PROJECTILE -> "proj_${el}_anim"
-            Kind.HIT -> return res.getIdentifier("hit_$el", "drawable", packageName)
-            else -> return res.getIdentifier("freeze_$el", "drawable", packageName)
-        } + if (variant == 0) "" else "${variant + 1}"
-        return res.getIdentifier(name, "drawable", packageName)
+            Kind.HIT -> "hit_$el"
+            else -> "freeze_$el"
+        } + if (variant == 0 || kind == Kind.HIT || kind == Kind.FREEZE) "" else "${variant + 1}"
+        return res.getIdentifier(prefix + name, "drawable", packageName)
+    }
+
+    /**
+     * The resource prefix [kind] art of [e] comes from: the pack's for its globes and shots (if it has
+     * them for [e]), the classic "" otherwise; [NO_ART] for the freeze clip of a pack's globe.
+     */
+    private fun prefixFor(kind: Kind, e: Element, mine: Boolean = true): String = if (!mine) "" else prefixes.getOrPut("$kind/$e") {
+        val p = pack.prefix
+        val packGlobe = p.isNotEmpty() && sheetId(Kind.GLOBE, e, 0, p) != 0
+        when (kind) {
+            Kind.GLOBE -> if (packGlobe) p else ""
+            Kind.PROJECTILE -> if (p.isNotEmpty() && sheetId(kind, e, 0, p) != 0) p else ""
+            Kind.FREEZE -> if (packGlobe) NO_ART else ""
+            else -> ""
+        }
     }
 
     /** Which animation variant to show for [look]: how many there are is found from the resources. */
-    private fun variant(kind: Kind, e: Element, look: Int): Int {
-        val n = variantCounts.getOrPut(kind to e) {
+    private fun variant(kind: Kind, e: Element, look: Int, prefix: String = prefixFor(kind, e)): Int {
+        val n = variantCounts.getOrPut("$prefix$kind/$e") {
             var k = 0
-            while (k < MAX_VARIANTS && sheetId(kind, e, k) != 0) k++
+            while (k < MAX_VARIANTS && sheetId(kind, e, k, prefix) != 0) k++
             k
         }
         return if (n <= 1) 0 else Math.floorMod(look / 7, n)
@@ -278,13 +334,13 @@ class Art(private val res: Resources, private val packageName: String) {
 
     /**
      * One animation's sheet, decoded the first time it is needed (once, even if two threads ask at
-     * the same moment), or null if there is no such sheet.
+     * the same moment), or null if there is no such sheet. [prefix]: the pack it comes from.
      */
-    private fun anim(kind: Kind, e: Element, variant: Int): Anim? =
-        anims.computeIfAbsent("$kind/$e/$variant") { loadAnim(kind, e, variant) ?: noSheet } as? Anim
+    private fun anim(kind: Kind, e: Element, variant: Int, prefix: String = prefixFor(kind, e)): Anim? =
+        anims.computeIfAbsent("$prefix$kind/$e/$variant") { loadAnim(kind, e, variant, prefix) ?: noSheet } as? Anim
 
-    private fun loadAnim(kind: Kind, e: Element, variant: Int): Anim? {
-        val id = sheetId(kind, e, variant)
+    private fun loadAnim(kind: Kind, e: Element, variant: Int, prefix: String): Anim? {
+        val id = sheetId(kind, e, variant, prefix)
         if (id == 0) return null
         val opts = BitmapFactory.Options().apply {
             inScaled = false
@@ -305,11 +361,10 @@ class Art(private val res: Resources, private val packageName: String) {
     fun preload(elements: List<Element>) {
         Thread {
             for (e in elements) {
-                for (v in 0 until MAX_VARIANTS) {
-                    anim(Kind.GLOBE, e, v)
-                    anim(Kind.PROJECTILE, e, v)
-                }
-                anim(Kind.FREEZE, e, 0)
+                // The classic look (the bot's and the starting globes) and, with a pack, yours.
+                for (prefix in setOf("", prefixFor(Kind.GLOBE, e))) for (v in 0 until MAX_VARIANTS) anim(Kind.GLOBE, e, v, prefix)
+                for (prefix in setOf("", prefixFor(Kind.PROJECTILE, e))) for (v in 0 until MAX_VARIANTS) anim(Kind.PROJECTILE, e, v, prefix)
+                anim(Kind.FREEZE, e, 0, "")
                 anim(Kind.HIT, e, 0)
             }
         }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
@@ -325,15 +380,39 @@ class Art(private val res: Resources, private val packageName: String) {
     private val wallButtons = HashMap<Int, Bitmap>()
     private val wallBlocks = HashMap<Long, Bitmap>()
 
-    // Wall variants wall_block_1, wall_block_2 … (variations of one crystal brick wall), found by name.
+    // Wall variants wall_block_1, wall_block_2 … (variations of one crystal brick wall), found by name;
+    // a pack's are <prefix>wall_block_1 … (the classic ones if the pack has none).
     @Suppress("DiscouragedApi")
-    private val wallBlockIds: IntArray by lazy {
-        generateSequence(1) { it + 1 }
-            .map { res.getIdentifier("wall_block_$it", "drawable", packageName) }
-            .takeWhile { it != 0 }
-            .toList().toIntArray()
-    }
+    private fun wallIdsOf(prefix: String): IntArray = generateSequence(1) { it + 1 }
+        .map { res.getIdentifier("${prefix}wall_block_$it", "drawable", packageName) }
+        .takeWhile { it != 0 }
+        .toList().toIntArray()
+
+    private var wallIds: IntArray? = null
+    private val wallBlockIds: IntArray
+        get() = wallIds ?: (wallIdsOf(pack.prefix).takeIf { it.isNotEmpty() } ?: wallIdsOf("")).also { wallIds = it }
     private val wallBlockSources = HashMap<Int, Bitmap>()
+
+    // The shop's and the unlock popup's previews of any pack, whichever is in use.
+    private val previewWalls = HashMap<String, Bitmap>()
+
+    /** Pack [p]'s globe sheet for [e] (the classic one if it has none), for previews. */
+    fun packGlobe(p: ElementPack, e: Element): Anim? {
+        val prefix = if (p.prefix.isNotEmpty() && sheetId(Kind.GLOBE, e, 0, p.prefix) != 0) p.prefix else ""
+        return anim(Kind.GLOBE, e, 0, prefix)
+    }
+
+    /** Pack [p]'s shot sheet for [e] (the classic one if it has none), for previews. */
+    fun packShot(p: ElementPack, e: Element): Anim? {
+        val prefix = if (p.prefix.isNotEmpty() && sheetId(Kind.PROJECTILE, e, 0, p.prefix) != 0) p.prefix else ""
+        return anim(Kind.PROJECTILE, e, 0, prefix)
+    }
+
+    /** Pack [p]'s first wall block, [size] pixels, for previews. */
+    fun packWall(p: ElementPack, size: Int): Bitmap = previewWalls.getOrPut("${p.id}/$size") {
+        val id = (wallIdsOf(p.prefix).takeIf { it.isNotEmpty() } ?: wallIdsOf("")).first()
+        Bitmap.createScaledBitmap(decode(id), size, size, true)
+    }
 
     /** The square stone wall button, [size] pixels, with rounded transparent corners. */
     fun wallButton(size: Int): Bitmap = wallButtons.getOrPut(size) { Bitmap.createScaledBitmap(wallButtonSource, size, size, true) }
@@ -364,15 +443,20 @@ class Art(private val res: Resources, private val packageName: String) {
 
     /**
      * A conjured wall of arcane crystal bricks for one field cell, [size] pixels, with slightly rounded
-     * corners. [look] (the wall's, see Board.wallLook) picks one of the variants.
+     * corners. [look] (the wall's, see Board.wallLook) picks one of the variants. [mine]: your wall, in
+     * your element pack's look (the bot's walls keep the classic one).
      */
-    fun wallBlock(size: Int, look: Int): Bitmap {
-        val variant = Math.floorMod(look, wallBlockIds.size)
-        return wallBlocks.getOrPut(variant.toLong() shl 32 or size.toLong()) {
-            val source = wallBlockSources.getOrPut(variant) { decode(wallBlockIds[variant]) }
+    fun wallBlock(size: Int, look: Int, mine: Boolean = true): Bitmap {
+        val ids = if (mine) wallBlockIds else classicWallIds
+        val id = ids[Math.floorMod(look, ids.size)]
+        return wallBlocks.getOrPut(id.toLong() shl 32 or size.toLong()) {
+            val source = wallBlockSources.getOrPut(id) { decode(id) }
             Bitmap.createScaledBitmap(source, size, size, true)
         }
     }
+
+    /** The classic walls, for the bot's (and starting) walls whatever pack you use. */
+    private val classicWallIds: IntArray by lazy { wallIdsOf("") }
 
     // Player avatars: an idle pose each, and one cast sheet at a time (a sheet is 24 frames, so only
     // the cast being played is kept; the next one is decoded in the background when a cast starts).

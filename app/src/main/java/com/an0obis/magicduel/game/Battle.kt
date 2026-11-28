@@ -111,6 +111,11 @@ class Projectile internal constructor(
     val flightTime: Float,
     /** Drawing only: picks the animation variant and loop phase; the globe it becomes keeps it. */
     val look: Int = Random.nextInt(LOOKS),
+    /**
+     * Drawing only: who made what flies (it wears their element pack). A shot's caster, or for a globe
+     * pushed out of a full row ([State.EJECTED]) whoever shot that globe (null for a starting one).
+     */
+    val maker: Side? = owner,
 ) {
     /**
      * FLYING to the field, WAITING at its edge while the field is busy, BOUNCING back at its own
@@ -403,7 +408,7 @@ class Battle(
 
     /** Raises the walls of a completed wall cast (the field is still). */
     private fun raiseWalls(side: Side, column: Int) {
-        events += BattleEvent.WallsRaised(side, column, board.raiseWalls(column))
+        events += BattleEvent.WallsRaised(side, column, board.raiseWalls(column, side))
     }
 
     private fun updateProjectiles(dt: Float) {
@@ -462,7 +467,7 @@ class Battle(
         p.state = Projectile.State.DONE
         snapshotPositions()
         // The shot enters one cell outside the field edge and slides until it is blocked.
-        val shot = Globe(p.element, p.look).apply {
+        val shot = Globe(p.element, p.look, p.owner).apply {
             fromCol = if (fromLeft) -1f else board.cols.toFloat()
             fromRow = p.lane.toFloat()
             drawCol = fromCol
@@ -481,7 +486,7 @@ class Battle(
                 // Full row, but this caster pushes anyway: the far globe flies out at the opponent.
                 breakingWall = null
                 val out = board.pushThroughFullRow(p.lane, fromLeft, shot)
-                flying += Projectile(p.owner, out.element, p.lane, 0f, out.look).apply { state = Projectile.State.EJECTED }
+                flying += Projectile(p.owner, out.element, p.lane, 0f, out.look, out.owner).apply { state = Projectile.State.EJECTED }
                 events += BattleEvent.PushedOut(p.owner, p.lane)
                 if (fromLeft) 0 else board.cols - 1
             }

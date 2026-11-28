@@ -199,6 +199,19 @@ class BoardTest {
     }
 
     @Test
+    fun wallsRememberWhoConjuredThemWhenTheyFall() {
+        val b = Board.parse(".....", ".....", ".....", ".....", "E....")
+        b.raiseWalls(1, Side.PLAYER)
+        b.raiseWalls(2, Side.ENEMY)
+        assertEquals(Side.PLAYER, b.wallOwner(0, 1))
+        assertEquals(Side.ENEMY, b.wallOwner(4, 2))
+        b.removeWall(4, 1)
+        assertTrue(b.applyGravity())
+        assertEquals(Side.PLAYER, b.wallOwner(4, 1)) // fell from above and kept its owner
+        assertEquals(null, Board.parse("#....").wallOwner(0, 0)) // a starting wall has none
+    }
+
+    @Test
     fun anExplosionBreaksTheWallsNextToItButNotDiagonally() {
         val b = Board.parse(".....", ".....", "#....", ".#..#", "#FFF#")
         val exploding = listOf(Cell(4, 1), Cell(4, 2), Cell(4, 3))

@@ -202,6 +202,19 @@ if ($Kind -eq 'walls') {
         $pngs += "$resDir\wall_block_$i.png"
         $i++
     }
+    # Element packs (art/packs/PROMPTS.md): originals/<pack>_wall_*.png -> <pack>_wall_block_1, 2, ...
+    $packs = Get-ChildItem "$dir\originals" -Filter '*_wall_*.png' | ForEach-Object { $_.BaseName -replace '_wall_.*$', '' } | Sort-Object -Unique
+    foreach ($pack in $packs) {
+        Get-ChildItem $resDir -Filter "${pack}_wall_block*.webp" | Remove-Item
+        $i = 1
+        foreach ($f in Get-ChildItem "$dir\originals" -Filter "${pack}_wall_*.png" | Sort-Object Name) {
+            $sprite = "$dir\sprites\$($f.Name)"
+            "{0,-12} {1}" -f $f.BaseName, [SymbolCutter]::Tile($f.FullName, $sprite, 192, 30, 1.0, 0.08, $true)
+            Copy-Item $sprite "$resDir\${pack}_wall_block_$i.png" -Force
+            $pngs += "$resDir\${pack}_wall_block_$i.png"
+            $i++
+        }
+    }
     & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files $pngs
     return
 }

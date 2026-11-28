@@ -70,6 +70,10 @@
     <string name="avatar_free">Free</string>
     <string name="avatar_owned">Owned</string>
     <string name="avatar_chosen">Chosen</string>
+    <string name="shop_packs">Element packs</string>
+    <string name="pack_classic">Classic</string>
+    <string name="pack_spiked">Dark Spikes</string>
+    <string name="pack_more">More packs soon</string>
     <string name="unlock_title_fmt">Unlock %1$s?</string>
     <string name="unlock">Unlock</string>
     <string name="you_have_fmt">You have %1$d</string>

@@ -66,6 +66,10 @@
     <string name="avatar_free">Gratis</string>
     <string name="avatar_owned">Tuyo</string>
     <string name="avatar_chosen">Elegido</string>
+    <string name="shop_packs">Packs de elementos</string>
+    <string name="pack_classic">Clásico</string>
+    <string name="pack_spiked">Púas oscuras</string>
+    <string name="pack_more">Pronto más packs</string>
     <string name="unlock_title_fmt">¿Desbloquear %1$s?</string>
     <string name="unlock">Desbloquear</string>
     <string name="you_have_fmt">Tienes %1$d</string>

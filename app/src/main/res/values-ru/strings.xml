@@ -66,6 +66,10 @@
     <string name="avatar_free">Бесплатно</string>
     <string name="avatar_owned">Открыт</string>
     <string name="avatar_chosen">Выбран</string>
+    <string name="shop_packs">Наборы стихий</string>
+    <string name="pack_classic">Классика</string>
+    <string name="pack_spiked">Тёмные шипы</string>
+    <string name="pack_more">Скоро новые наборы</string>
     <string name="unlock_title_fmt">Открыть облик «%1$s»?</string>
     <string name="unlock">Открыть</string>
     <string name="you_have_fmt">У вас %1$d</string>

@@ -114,7 +114,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /** A wall that just broke at ([x], [y]): it bursts apart over [WALL_BREAK_TIME]. */
-    private class BrokenWall(val x: Float, val y: Float, val look: Int) { var t = 0f }
+    private class BrokenWall(val x: Float, val y: Float, val look: Int, val mine: Boolean) { var t = 0f }
 
     private class Bolt(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val color: Int) {
         var t = 0f
@@ -155,6 +155,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * unlocked (chosen before avatars had prices) goes back to the free one.
      */
     private var avatar = Avatars.byId(prefs.getString(KEY_AVATAR, null)).let { if (owns(it)) it else Avatars.all.first() }
+
+    /** The element packs you have unlocked (by id); the classic look is always yours. */
+    private val ownedPacks: MutableSet<String> = HashSet(prefs.getStringSet(KEY_OWNED_PACKS, null) ?: emptySet())
+
+    private fun ownsPack(p: ElementPack): Boolean = !p.paid || p.id in ownedPacks
+
+    /** The element pack in use: the look of the globes, shots and walls (chosen in the shop). */
+    private var pack = ElementPacks.byId(prefs.getString(KEY_PACK, null)).let { if (ownsPack(it)) it else ElementPacks.CLASSIC }
 
     /** Essence (a revive costs it) and the daily gift's streak; saved with the rest. */
     private val economy = Economy(
@@ -222,6 +230,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /** The avatar in the unlock popup, and the popup it was opened from (closing goes back there). */
     private var unlocking: Avatar? = null
+    private var unlockingPack: ElementPack? = null
     private var unlockFrom: Dialog? = null
 
     /** When the shop last said purchases are coming soon (a tap on a pack in a release build). */
@@ -339,6 +348,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     init {
         sounds.enabled = soundOn
+        art.pack = pack
         val r = Random(7)
         for (i in stars.indices) stars[i] = r.nextFloat()
         startBattle()
@@ -516,6 +526,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             .putLong(KEY_LAST_CLAIM_DAY, economy.lastClaimDay)
             .putInt(KEY_STREAK_DAY, economy.streakDay)
             .putStringSet(KEY_OWNED_AVATARS, HashSet(ownedAvatars))
+            .putStringSet(KEY_OWNED_PACKS, HashSet(ownedPacks))
+            .putString(KEY_PACK, pack.id)
             .apply()
     }
 
@@ -527,19 +539,45 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         save()
     }
 
+    /** Uses element pack [p] (one you own) from now on: its globes, shots and walls, also in this duel. */
+    private fun choosePack(p: ElementPack) {
+        pack = p
+        art.pack = p
+        art.preload(battle.elements)
+        save()
+    }
+
     /** A tap on an avatar you don't have yet: the unlock popup (closing it goes back to [from]). */
     private fun offerUnlock(a: Avatar, from: Dialog) {
         unlocking = a
+        unlockingPack = null
         unlockFrom = from
         openDialog(Dialog.UNLOCK)
     }
 
-    /** Unlocks the avatar in the popup for its price, puts it on and goes back to where the popup came from. */
-    private fun unlockAvatar() {
-        val a = unlocking ?: return
-        if (!economy.spend(a.price)) return
-        ownedAvatars += a.id
-        chooseAvatar(a)
+    /** A tap on an element pack you don't have yet: the unlock popup (closing it goes back to [from]). */
+    private fun offerUnlock(p: ElementPack, from: Dialog) {
+        unlockingPack = p
+        unlocking = null
+        unlockFrom = from
+        openDialog(Dialog.UNLOCK)
+    }
+
+    /**
+     * Unlocks the avatar or element pack in the popup for its price, puts it on and goes back to where
+     * the popup came from.
+     */
+    private fun unlockOffered() {
+        val a = unlocking
+        val p = unlockingPack
+        if (!economy.spend(a?.price ?: p?.price ?: return)) return
+        if (a != null) {
+            ownedAvatars += a.id
+            chooseAvatar(a)
+        } else if (p != null) {
+            ownedPacks += p.id
+            choosePack(p)
+        }
         essencePulse = 1f
         sounds.play(Sounds.Fx.FREEZE, 0.8f)
         closeDialog()
@@ -823,7 +861,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 e.cells.forEach {
                     val x = cellX(it.col.toFloat())
                     val y = cellY(it.row.toFloat())
-                    brokenWalls += BrokenWall(x, y, battle.board.wallLook(it.row, it.col))
+                    brokenWalls += BrokenWall(x, y, battle.board.wallLook(it.row, it.col), battle.board.wallOwner(it.row, it.col) == Side.PLAYER)
                     rings += Ring(x, y, mix(WALL_COLOR, WHITE, 0.4f), 0.2f * fu, 0.75f * fu, 0.3f)
                 }
             }
@@ -841,7 +879,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             // Elements with a freeze clip show the shot freezing (drawFreeze); the others get a frost ring.
             is BattleEvent.Landed -> {
                 sounds.play(Sounds.Fx.FREEZE, 0.5f)
-                if (art.freeze(e.element) == null) rings += Ring(
+                if (art.freeze(e.element, e.side == Side.PLAYER) == null) rings += Ring(
                     cellX(e.col.toFloat()), cellY(e.row.toFloat()),
                     mix(art.color(e.element), WHITE, 0.65f), 0.25f * fu, 0.8f * fu, 0.35f,
                 )
@@ -1057,7 +1095,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val a = Avatars.byId(hit.removePrefix("skin_"))
                     if (owns(a)) chooseAvatar(a) else offerUnlock(a, Dialog.SHOP)
                 }
-                hit == "unlock" -> unlockAvatar()
+                // An element pack in the shop: unlock it, or use one you own.
+                hit != null && hit.startsWith("epack_") -> {
+                    val p = ElementPacks.byId(hit.removePrefix("epack_"))
+                    if (ownsPack(p)) choosePack(p) else offerUnlock(p, Dialog.SHOP)
+                }
+                hit == "unlock" -> unlockOffered()
                 hit == "unlock_cancel" -> closeDialog()
                 hit == "unlock_shop" -> openDialog(Dialog.SHOP)
                 hit == "sound" -> {
@@ -1495,7 +1538,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             // Standing walls shimmer gently, each in its own rhythm.
             val shimmer = 0.9f + 0.1f * sin(clock * 2.6f + r * 1.7f + col * 2.3f)
             bitmapPaint.alpha = (255 * min(1f, k * 2f) * shimmer).toInt()
-            c.drawBitmap(art.wallBlock(size, board.wallLook(r, col)), null, rect, bitmapPaint)
+            c.drawBitmap(art.wallBlock(size, board.wallLook(r, col), board.wallOwner(r, col) == Side.PLAYER), null, rect, bitmapPaint)
             if (k < 1f) {
                 // A flash of conjuring light as it appears.
                 fill.color = withAlpha(WALL_COLOR, (110 * (1f - k)).toInt())
@@ -1519,7 +1562,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             if (wall > 0f) {
                 rect.set(b.x - size / 2f, b.y - size / 2f, b.x + size / 2f, b.y + size / 2f)
                 bitmapPaint.alpha = (255 * wall).toInt()
-                c.drawBitmap(art.wallBlock(size, b.look), null, rect, bitmapPaint)
+                c.drawBitmap(art.wallBlock(size, b.look, b.mine), null, rect, bitmapPaint)
             }
         }
         bitmapPaint.alpha = 255
@@ -1569,12 +1612,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         battle.board.forEachGlobe { _, _, g ->
             if (g.inFlight) {
                 // Still a projectile sliding through the row; it freezes into a globe when it stops.
-                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), if (g.headingRight) 1f else -1f, 0f, g.look)
+                drawShot(c, g.element, cellX(g.drawCol), cellY(g.drawRow), if (g.headingRight) 1f else -1f, 0f, g.look, mine = g.owner == Side.PLAYER)
                 return@forEachGlobe
             }
             var scale = 1f
             var alpha = 1f
-            val hasFreeze = g.freeze > 0f && art.freeze(g.element) != null
+            val mine = g.owner == Side.PLAYER // your globes wear your element pack
+            val hasFreeze = g.freeze > 0f && art.freeze(g.element, mine) != null
             if (g.popping && popping) {
                 val p = battle.phaseProgress
                 scale = 1f + 0.45f * p
@@ -1590,7 +1634,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val half = size * scale / 2f
             rect.set(x - half, y - half, x + half, y + half)
             bitmapPaint.alpha = (255 * alpha).toInt()
-            if (alpha > 0f) art.drawGlobe(c, g.element, rect, animFrame(g.look), g.look, bitmapPaint)
+            if (alpha > 0f) art.drawGlobe(c, g.element, rect, animFrame(g.look), g.look, bitmapPaint, mine)
             if (g.freeze > 0f && !hasFreeze) {
                 // No freeze animation for this element: a white flash fades off the new globe.
                 fill.color = withAlpha(0xFFE8F6FF.toInt(), (190 * g.freeze).toInt())
@@ -1613,7 +1657,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * (tools/art/anim-sheets.ps1); at first the live comet is drawn over it and fades out.
      */
     private fun drawFreeze(c: Canvas, g: Globe) {
-        val anim = art.freeze(g.element) ?: return
+        val anim = art.freeze(g.element, g.owner == Side.PLAYER) ?: return
         val t = 1f - g.freeze
         val h = freezeHeight().toFloat()
         val w = h * anim.aspect
@@ -1630,7 +1674,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         // The live comet keeps moving at first and fades out as the frost takes over (the clip starts
         // at the flying comet's head size, see tools/art/anim-sheets.ps1).
         val live = 1f - smooth01(t / 0.35f)
-        if (live > 0f) drawShot(c, g.element, x, y, if (g.headingRight) 1f else -1f, 0f, g.look, live)
+        if (live > 0f) drawShot(c, g.element, x, y, if (g.headingRight) 1f else -1f, 0f, g.look, live, g.owner == Side.PLAYER)
         bitmapPaint.alpha = 255
     }
 
@@ -1649,8 +1693,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
      * that way. No extra motion is added here — the only animation is the projectile's own loop,
      * whose head is locked in place, so the head moves exactly as the caller moves it.
      */
-    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, look: Int, alpha: Float = 1f) {
-        val anim = art.projectile(e, look)
+    private fun drawShot(c: Canvas, e: Element, x: Float, y: Float, dx: Float, dy: Float, look: Int, alpha: Float = 1f, mine: Boolean = true) {
+        val anim = art.projectile(e, look, mine)
         val h = SHOT_HEIGHT * fu
         val w = h * anim.aspect
         // The head's centre sits SHOT_HEAD_INSET image heights in from the right edge (room for spray ahead).
@@ -1685,6 +1729,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val behind = 0.3f * fu
         for (p in battle.projectiles) {
             val dir = if (p.owner.fromLeft) 1f else -1f
+            val mine = p.maker == Side.PLAYER // your shots (and your globes pushed out) wear your element pack
             val laneY = laneY(p.lane)
             val x = when (p.state) {
                 Projectile.State.FLYING -> startX(p.owner) + (endX(p.owner) - startX(p.owner)) * p.progress
@@ -1710,21 +1755,22 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val ex = endX(p.owner)
             val laneY = laneY(p.lane)
             val dir = if (p.owner.fromLeft) 1f else -1f
+            val mine = p.maker == Side.PLAYER // your shots (and your globes pushed out) wear your element pack
             // Every path is a straight line travelled at constant speed; the projectile's own loop is
             // its only animation (it fades in during the first moment, without moving or growing).
             when (p.state) {
                 Projectile.State.FLYING -> drawShot(
-                    c, p.element, sx + (ex - sx) * p.progress, laneY, dir, 0f, p.look, min(1f, p.flown / SHOT_FADE_IN),
+                    c, p.element, sx + (ex - sx) * p.progress, laneY, dir, 0f, p.look, min(1f, p.flown / SHOT_FADE_IN), mine,
                 )
                 // The field is still moving: the shot holds at its edge until it can slide in.
-                Projectile.State.WAITING -> drawShot(c, p.element, ex, laneY, dir, 0f, p.look)
+                Projectile.State.WAITING -> drawShot(c, p.element, ex, laneY, dir, 0f, p.look, mine = mine)
                 Projectile.State.BOUNCING -> {
                     // Backfire: the shot turns around and flies straight at its own caster.
                     val target = chest(p.owner)
                     val t = p.bounceProgress
                     drawShot(
                         c, p.element, ex + (target.x - ex) * t, laneY + (target.y - laneY) * t,
-                        target.x - ex, target.y - laneY, p.look,
+                        target.x - ex, target.y - laneY, p.look, mine = mine,
                     )
                 }
                 Projectile.State.EJECTED -> {
@@ -1736,7 +1782,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val y = laneY + (target.y - laneY) * t
                     val half = (0.9f * fu).toInt().coerceAtLeast(8) / 2f
                     rect.set(x - half, y - half, x + half, y + half)
-                    art.drawGlobe(c, p.element, rect, animFrame(p.look), p.look, bitmapPaint)
+                    art.drawGlobe(c, p.element, rect, animFrame(p.look), p.look, bitmapPaint, mine)
                 }
                 Projectile.State.DONE -> Unit
             }
@@ -2195,7 +2241,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val packW = (w - 2 * pad - (SHOP_PACKS.size - 1) * gap) / SHOP_PACKS.size
         val packH = packW * 1.3f
         val skinsH = packW * 1.75f
-        val h = 1.3f * u + 0.5f * u + packH + 0.55f * u + 0.5f * u + skinsH + 0.35f * u + 0.8f * u + pad
+        val elH = packW * 1.45f
+        val h = 1.3f * u + 0.5f * u + packH + 0.55f * u + 0.5f * u + skinsH + 0.3f * u + 0.5f * u + elH + 0.35f * u + 0.8f * u + pad
         val card = drawCard(c, w, h, s(R.string.shop))
         val cx = card.centerX()
         drawAmount(c, "${(shownEssence + 0.5f).toInt()}", card.right - pad, card.top + 0.8f * u, 0.34f * u, Pal.TEXT, Paint.Align.RIGHT, glow = essencePulse)
@@ -2278,6 +2325,55 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
             dialogButtons["skin_${a.id}"] = r
         }
+        y += skinsH + 0.3f * u
+        // Element packs: the classic look and the paid ones, each with its four globes; the last card
+        // says more are coming. A tap uses a pack you own, or opens the unlock popup.
+        label(c, s(R.string.shop_packs), card.left + pad, y + 0.3f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
+        y += 0.5f * u
+        val packs = ElementPacks.all
+        for (i in 0..packs.size) {
+            if (i >= 3) break
+            val x = card.left + pad + i * (packW + gap)
+            val r = RectF(x, y, x + packW, y + elH)
+            fill.color = withAlpha(BLACK, 90)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            val p = packs.getOrNull(i)
+            if (p == null) {
+                stroke.color = withAlpha(WHITE, 40)
+                stroke.strokeWidth = 0.03f * u
+                c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+                val lines = wrap(s(R.string.pack_more), 0.26f * u, packW - 0.3f * u)
+                val ly = r.centerY() - (lines.size - 1) * 0.18f * u + 0.09f * u
+                lines.forEachIndexed { k, line -> label(c, line, r.centerX(), ly + k * 0.36f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.CENTER) }
+                continue
+            }
+            val owned = ownsPack(p)
+            fill.shader = RadialGradient(r.centerX(), r.top + elH * 0.38f, packW * 0.62f, withAlpha(p.glow, 60), withAlpha(p.glow, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            fill.shader = null
+            // Its four globes, two by two.
+            val gs = min((packW - 0.45f * u) / 2f, (elH - 1.05f * u) / 2f)
+            val gx0 = r.centerX() - gs - 0.04f * u
+            val gy0 = r.top + 0.12f * u
+            bitmapPaint.alpha = if (owned) 255 else 170
+            Element.active(Rules.START_ELEMENTS).take(4).forEachIndexed { k, e ->
+                val gx = gx0 + (k % 2) * (gs + 0.08f * u)
+                val gy = gy0 + (k / 2) * (gs + 0.08f * u)
+                art.packGlobe(p, e)?.draw(c, animFrame(e.ordinal * 5), RectF(gx, gy, gx + gs, gy + gs), bitmapPaint)
+            }
+            bitmapPaint.alpha = 255
+            label(c, s(p.nameRes), r.centerX(), r.bottom - 0.58f * u, 0.24f * u, Pal.TEXT, Paint.Align.CENTER)
+            val chosen = p.id == pack.id
+            when {
+                chosen -> label(c, s(R.string.avatar_chosen), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, GOLD, Paint.Align.CENTER)
+                owned -> label(c, s(R.string.avatar_owned), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+                else -> drawAmount(c, "${p.price}", r.centerX(), r.bottom - 0.17f * u, 0.3f * u, GOLD, Paint.Align.CENTER)
+            }
+            stroke.color = if (chosen) GOLD else withAlpha(p.glow, 120)
+            stroke.strokeWidth = (if (chosen) 0.06f else 0.035f) * u
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+            dialogButtons["epack_${p.id}"] = r
+        }
         val by = card.bottom - pad - 0.8f * u
         val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
         drawButton(c, close, s(R.string.close), null, primary = false, small = true)
@@ -2285,34 +2381,72 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Unlocking a paid avatar: the figure on its crystal's light, its price and the essence you have,
-     * with Cancel and Unlock. Short of essence, a note says where to get more and Shop replaces Unlock.
+     * Element pack [p]'s look in [area]: its four globes in a row (animated), and under them one of its
+     * walls next to a flying shot.
+     */
+    private fun drawPackPreview(c: Canvas, p: ElementPack, area: RectF) {
+        val elements = Element.active(Rules.START_ELEMENTS)
+        val gap = 0.12f * area.width() / elements.size
+        val gs = min((area.width() - 0.4f * u - gap * (elements.size - 1)) / elements.size, area.height() * 0.42f)
+        val gy = area.top + 0.2f * u
+        var gx = area.centerX() - (gs * elements.size + gap * (elements.size - 1)) / 2f
+        for (e in elements) {
+            val anim = art.packGlobe(p, e)
+            if (anim != null) anim.draw(c, animFrame(e.ordinal * 5), RectF(gx, gy, gx + gs, gy + gs), bitmapPaint)
+            gx += gs + gap
+        }
+        val rowTop = gy + gs + 0.25f * u
+        val ws = min(area.bottom - 0.2f * u - rowTop, area.width() * 0.3f)
+        val shot = art.packShot(p, Element.FIRE)
+        val shotH = ws * 0.9f
+        val shotW = min(shotH * (shot?.aspect ?: 2f), area.width() - ws - 0.9f * u)
+        val left = area.centerX() - (ws + 0.3f * u + shotW) / 2f
+        c.drawBitmap(art.packWall(p, ws.toInt().coerceAtLeast(8)), null, RectF(left, rowTop, left + ws, rowTop + ws), bitmapPaint)
+        if (shot != null) {
+            val sx = left + ws + 0.3f * u
+            val sy = rowTop + (ws - shotH) / 2f
+            shot.draw(c, animFrame(3), RectF(sx, sy, sx + shotW, sy + shotH), bitmapPaint)
+        }
+    }
+
+    /**
+     * Unlocking a paid avatar or element pack: the avatar's figure on its crystal's light (or the pack's
+     * globes, a wall and a flying shot), its price and the essence you have, with Cancel and Unlock.
+     * Short of essence, a note says where to get more and Shop replaces Unlock.
      */
     private fun drawUnlock(c: Canvas) {
-        val a = unlocking ?: return
+        val a = unlocking
+        val p = unlockingPack
+        if (a == null && p == null) return
+        val price = a?.price ?: p!!.price
+        val glow = a?.glow ?: p!!.glow
         val w = min(width - 1.6f * u, 6.8f * u)
         val pad = 0.35f * u
         val picH = 3.8f * u
-        val enough = economy.essence >= a.price
+        val enough = economy.essence >= price
         val note = if (enough) emptyList() else wrap(s(R.string.not_enough_essence), 0.28f * u, w - 2 * pad)
         val h = 1.3f * u + picH + 0.25f * u + 0.6f * u + 0.45f * u + note.size * 0.38f * u + 0.35f * u + 0.85f * u + pad
-        val card = drawCard(c, w, h, s(R.string.unlock_title_fmt, s(a.nameRes)))
+        val card = drawCard(c, w, h, s(R.string.unlock_title_fmt, s(a?.nameRes ?: p!!.nameRes)))
         val cx = card.centerX()
         val pic = RectF(card.left + pad, card.top + 1.3f * u, card.right - pad, card.top + 1.3f * u + picH)
         fill.color = withAlpha(BLACK, 90)
         c.drawRoundRect(pic, 0.25f * u, 0.25f * u, fill)
-        fill.shader = RadialGradient(pic.centerX(), pic.top + picH * 0.45f, picH * 0.6f, withAlpha(a.glow, 90), withAlpha(a.glow, 0), Shader.TileMode.CLAMP)
+        fill.shader = RadialGradient(pic.centerX(), pic.top + picH * 0.45f, picH * 0.6f, withAlpha(glow, 90), withAlpha(glow, 0), Shader.TileMode.CLAMP)
         c.drawRoundRect(pic, 0.25f * u, 0.25f * u, fill)
         fill.shader = null
-        val src = art.opaqueBounds(a.idleRes)
-        val ih = picH - 0.3f * u
-        val iw = ih * src.width() / src.height()
-        c.drawBitmap(art.avatarIdle(a), src, RectF(cx - iw / 2f, pic.top + 0.15f * u, cx + iw / 2f, pic.top + 0.15f * u + ih), bitmapPaint)
-        stroke.color = withAlpha(a.glow, 140)
+        if (a != null) {
+            val src = art.opaqueBounds(a.idleRes)
+            val ih = picH - 0.3f * u
+            val iw = ih * src.width() / src.height()
+            c.drawBitmap(art.avatarIdle(a), src, RectF(cx - iw / 2f, pic.top + 0.15f * u, cx + iw / 2f, pic.top + 0.15f * u + ih), bitmapPaint)
+        } else if (p != null) {
+            drawPackPreview(c, p, pic)
+        }
+        stroke.color = withAlpha(glow, 140)
         stroke.strokeWidth = 0.035f * u
         c.drawRoundRect(pic, 0.25f * u, 0.25f * u, stroke)
         var y = pic.bottom + 0.25f * u
-        drawAmount(c, "${a.price}", cx, y + 0.48f * u, 0.5f * u, GOLD, Paint.Align.CENTER)
+        drawAmount(c, "$price", cx, y + 0.48f * u, 0.5f * u, GOLD, Paint.Align.CENTER)
         y += 0.6f * u
         drawAmount(c, s(R.string.you_have_fmt, (shownEssence + 0.5f).toInt()), cx, y + 0.34f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER, glow = essencePulse)
         y += 0.45f * u
@@ -3022,6 +3156,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_LAST_CLAIM_DAY = "lastClaimDay"
         const val KEY_STREAK_DAY = "streakDay"
         const val KEY_OWNED_AVATARS = "ownedAvatars"
+        const val KEY_OWNED_PACKS = "ownedPacks"
+        const val KEY_PACK = "elementPack"
 
         /** Essence: the crystal's glow, its lit and its shaded side. */
         val ESSENCE = 0xFF6FE8FF.toInt()

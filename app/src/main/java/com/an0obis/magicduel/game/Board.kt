@@ -10,9 +10,10 @@ internal const val LOOKS = 1 shl 16
 /**
  * A crystal globe on the field. Draw positions are in cell units and are animated by [Battle].
  * [look] only affects drawing: it picks the animation variant and where in its loop the globe starts.
- * A shot keeps the look of the projectile it was, so it doesn't change when it lands.
+ * A shot keeps the look of the projectile it was, so it doesn't change when it lands. [owner]: who shot
+ * it (null for the globes a duel starts with); drawing only, so your globes wear your element pack.
  */
-class Globe(val element: Element, val look: Int = Random.nextInt(LOOKS)) {
+class Globe(val element: Element, val look: Int = Random.nextInt(LOOKS), val owner: Side? = null) {
     var drawCol = 0f
     var drawRow = 0f
     internal var fromCol = 0f
@@ -41,11 +42,16 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
     private val cells = Array(rows) { arrayOfNulls<Globe>(cols) }
     private val walls = Array(rows) { BooleanArray(cols) }
 
-    // Drawing only: which look (art variant) each wall has; it moves with the wall when it falls.
+    // Drawing only: which look (art variant) each wall has and who conjured it (your walls wear your
+    // element pack); both move with the wall when it falls.
     private val wallLooks = Array(rows) { IntArray(cols) }
+    private val wallOwners = Array(rows) { arrayOfNulls<Side>(cols) }
 
     /** The look of the wall at ([row], [col]): picks its art variant. Kept after the wall breaks, for the shatter. */
     fun wallLook(row: Int, col: Int): Int = wallLooks[row][col]
+
+    /** Who conjured the wall at ([row], [col]) (null for walls a duel starts with). Kept after it breaks. */
+    fun wallOwner(row: Int, col: Int): Side? = wallOwners[row][col]
 
     operator fun get(row: Int, col: Int): Globe? = cells[row][col]
     operator fun set(row: Int, col: Int, globe: Globe?) {
@@ -57,14 +63,15 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
     fun isEmpty(row: Int, col: Int): Boolean = cells[row][col] == null && !walls[row][col]
 
     /**
-     * Conjures walls in every empty cell of [col]. Returns those cells (top to bottom); none if the
-     * column is already full.
+     * Conjures walls for [owner] in every empty cell of [col]. Returns those cells (top to bottom);
+     * none if the column is already full.
      */
-    fun raiseWalls(col: Int): List<Cell> {
+    fun raiseWalls(col: Int, owner: Side? = null): List<Cell> {
         val raised = ArrayList<Cell>()
         for (r in 0 until rows) if (isEmpty(r, col)) {
             walls[r][col] = true
             wallLooks[r][col] = Random.nextInt(LOOKS)
+            wallOwners[r][col] = owner
             raised += Cell(r, col)
         }
         return raised
@@ -208,7 +215,10 @@ class Board(val rows: Int = Rules.ROWS, val cols: Int = Rules.COLS) {
                     cells[target][c] = g
                     cells[r][c] = null
                     walls[target][c] = wall
-                    if (wall) wallLooks[target][c] = wallLooks[r][c]
+                    if (wall) {
+                        wallLooks[target][c] = wallLooks[r][c]
+                        wallOwners[target][c] = wallOwners[r][c]
+                    }
                     walls[r][c] = false
                     wallFrom[target][c] = if (wall) wallFrom[r][c] else target.toFloat()
                     moved = true
