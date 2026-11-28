@@ -181,6 +181,49 @@ class BattleTest {
         assertTrue(b.tryCast(0, 0))
     }
 
+    /** A battle where your next shot (into the full bottom row) backfires and takes your last HP. */
+    private fun downedBattle(): Battle {
+        val board = Board.parse(".....", ".....", ".....", ".....", "FWEAF")
+        val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
+        b.player.takeDamage(Rules.PLAYER_HP - Rules.BACKFIRE_DAMAGE)
+        b.spells[4, 0] = Element.WATER
+        assertTrue(b.tryCast(4, 0))
+        val events = runCollecting(b, shotTime(4))
+        assertTrue(events.contains(BattleEvent.PlayerDown(0)))
+        return b
+    }
+
+    @Test
+    fun atZeroHpYouGoDownAndTheDuelPauses() {
+        val b = downedBattle()
+        assertTrue(b.playerDown)
+        assertNull(b.winner)
+        assertEquals(0, b.player.hp)
+        assertFalse(b.tryCast(0, 0))
+        assertTrue(b.drainEvents().none { it is BattleEvent.GameOver })
+    }
+
+    @Test
+    fun aReviveBringsYouBackWithFullHp() {
+        val b = downedBattle()
+        assertTrue(b.revive())
+        assertFalse(b.playerDown)
+        assertEquals(Rules.PLAYER_HP, b.player.hp)
+        assertEquals(1, b.revives)
+        assertTrue(b.drainEvents().contains(BattleEvent.Revived(1)))
+        assertTrue(b.tryCast(0, 0))
+        assertFalse(b.revive()) // nothing to revive from
+    }
+
+    @Test
+    fun givingUpEndsTheDuelAsADefeat() {
+        val b = downedBattle()
+        assertTrue(b.giveUp())
+        assertEquals(Side.ENEMY, b.winner)
+        assertTrue(b.drainEvents().contains(BattleEvent.GameOver(Side.ENEMY)))
+        assertFalse(b.revive())
+    }
+
     @Test
     fun shotIntoFullRowBackfiresOnCaster() {
         val board = Board.parse(".....", ".....", ".....", ".....", "FWEAF")

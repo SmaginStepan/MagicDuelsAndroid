@@ -68,6 +68,29 @@
     <string name="avatar_free">Gratis</string>
     <string name="avatar_more">Pronto más avatares</string>
 
+    <!-- Esencia: el regalo diario, revivir y la tienda -->
+    <string name="shop">Tienda</string>
+    <string name="daily_title">Regalo diario</string>
+    <string name="daily_streak_fmt">Día %1$d seguido</string>
+    <string name="daily_base">Esencia del día</string>
+    <string name="daily_bonus">Bonus de racha</string>
+    <string name="daily_total">Total</string>
+    <string name="daily_hint">Vuelve mañana para un bonus mayor. Si faltas un día, la racha empieza de nuevo.</string>
+    <string name="collect">Recoger</string>
+    <string name="revive_title">¡Has caído!</string>
+    <string name="revive_msg">Revive con toda la salud y sigue luchando. Cada vez que revives en un duelo cuesta el doble que la anterior.</string>
+    <string name="revive_short">No tienes esencia suficiente. Consigue más en la tienda o ríndete en este duelo.</string>
+    <string name="you_have_fmt">Tienes %1$d</string>
+    <string name="revive">Revivir</string>
+    <string name="give_up">Rendirse</string>
+    <string name="reviving">Reviviendo…</string>
+    <string name="revived">¡De vuelta en pie!</string>
+    <string name="shop_essence">Packs de esencia</string>
+    <string name="shop_avatars">Avatares</string>
+    <string name="shop_avatars_soon">Pronto aparecerán aquí nuevos avatares.</string>
+    <string name="shop_free_test">Gratis · prueba</string>
+    <string name="shop_soon_msg">Las compras llegarán pronto.</string>
+
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">
         <item>Muñeco de tiro</item>

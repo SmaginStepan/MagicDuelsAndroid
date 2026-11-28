@@ -44,9 +44,9 @@ frame:
 
 | Avatar | cast1 (raise, bolt) | cast2 (orb throw) | cast3 (channel, projectile) |
 |---|---|---|---|
-| Mage | fb38e59e-4d2d-4431-9863-c6da7bfcfbfc, variation 3 | a3085e15-ecb4-4fd4-9c72-838feca010ab, 3 | 1d9cbac2-94d3-4a19-9c69-b16c113ace45, 3 |
+| Mage | (replaced by Google Flow, see the end of this file) fb38e59e-…, 3 | a3085e15-…, 3 | 1d9cbac2-…, 3 |
 | Sorceress | (replaced by Google Flow, see the end of this file) 254734d0-…, 4 | ebedaa5a-…, 1 | 8848498a-…, 3 |
-| Conjurer | c8a959af-82d8-41a6-950f-e5557dd63b22, 4 | 4bc7f7fe-667a-4647-a112-c8f78192949e, 3 | 15328e03-4c1c-460a-b119-2627dd90e43a, 4 |
+| Conjurer | (replaced by Google Flow, see the end of this file) c8a959af-…, 4 | 4bc7f7fe-…, 3 | 15328e03-…, 4 |
 
 The first set of animations (looped, with the magic fading instead of being thrown, and lip movement)
 was ddeff857-…, 7b7a6b07-…, 0963cf2a-… (mage), 513884a8-…, f268fb56-…, 1a00a95d-… (sorceress) and
@@ -113,3 +113,97 @@ magic (a swirl's middle, an orb's rim, the inside of the rune rings, spell cores
 background they read as flat white patches, so the magic keeps only its coloured parts and is
 see-through elsewhere. Her frame has room above the head, so she is drawn with `scale = 1.16`
 (`Avatars.kt`). The Midjourney frames are kept in `anim/sorceress_mj/`.
+
+## Mage, remade with Google Flow (2026-11-27)
+
+The same way as the sorceress (above): Veo 3.1 Lite, 9:16, x2 each, silent, project `fcb5346a-…`;
+his idle still (floor line removed, padded to 9:16) as Start and End for the casts, Start only for the
+defeat; he faces right. Prompts start `The grim old archmage with a long grey beard, in the hooded deep
+navy robe and tall pointed hat, faces the right edge of the frame. Silent, mouth closed …`, use icy
+blue magic and add `Deep saturated icy blue magic, no white glare, no bright flash.` 80 credits.
+
+| Clip | Action | Pick | Frames used |
+|---|---|---|---|
+| cast1 | raises the staff while icy blue magic swirls into a sphere round the crystal, swings it forward and launches a bolt to the right | A (`ANqvLObtDcxI…`) | 0–4.6 s |
+| cast2 | a frost orb grows in his outstretched hand and streaks off to the right (remade: the first pick, `ANqvLOYnkHDl…`, sent the orb back across him to the left; prompt adds "the orb flies straight away from him to the right … never comes back toward him or passes across his body") | A of the remake (`ANqvLOahWUXg…`) | 0–4.2 s |
+| cast3 | a ring of runes round the crystal, then a projectile streaks right | A (`ANqvLOYqcqD9…`) | 0–4.9 s |
+| defeat | struck by a blast, staggers, drops the staff, sinks to his knees, head bowed | A (`ANqvLOawbogE…`) | 2.25–6.4 s (after the blast and its motion blur) |
+
+Cut with `cut-avatar.ps1 -Avatar mage -DefeatSheet -PocketMin 1 -FigureMargin 0.12 -NoWhite -ColorToAlpha`.
+His frost magic is white-blue, so erasing white (`-NoWhite`) left holes and pale halos. `-ColorToAlpha`
+un-blends every pale or bright-blue pixel outside the figure (his pose in each clip's first frame) from
+the white background with the least opacity that explains it: white goes clear, pale blue becomes a
+faint pure-blue glow, strong blue stays strong. (`-FillCores` was tried first and dropped.) Drawn with
+`scale = 1.10`. The Midjourney frames are kept in `anim/mage_mj/`.
+
+## Conjurer, remade with Google Flow (2026-11-27)
+
+Like the mage: Veo 3.1 Lite, 9:16, x2 each, silent; his idle still as Start and End for the casts,
+Start only for the defeat; he faces right. Prompts start `The dark-skinned battle conjurer with short
+black hair, in the long high-collared dark green and black coat-robe, faces the right edge of the
+frame. Silent, mouth closed …`, use amber fire magic and add `Deep saturated amber-orange magic, no
+white glare, no bright flash.` 80 credits. Two clips threw to the **left** (cast 1 B, cast 2 A), so
+they were left out.
+
+| Clip | Action | Pick | Frames used |
+|---|---|---|---|
+| cast1 | an amber vortex at the raised crystal, swings the staff, fire shoots right | A (`ANqvLOaV8Ff_…`) | 0–4.9 s |
+| cast2 | a spinning fire orb in his palm, then a burst of flame streaks right | B (`ANqvLOYkgggr…`) | 0–5.5 s |
+| cast3 | a ring of amber runes round the crystal, he tilts the staff to the right and fire blasts out of the tip through the right edge (remade: the first pick, `ANqvLOZKbVIM…`, swept the fireball back across him; of 8 retries only this one never crossed his body; prompt: "a small amber fireball forms at the crystal tip, in front of him … No fire ever appears to his left, behind him or over his body") | `ANqvLOZAjngO…` | 0–3.6 s |
+| defeat | thrown back by a blast, drops the staff, sinks to his knees, head bowed | A (`ANqvLOZQw_6Y…`) | 1.5–6.0 s (after the violet blast) |
+
+Cut with `cut-avatar.ps1 -Avatar conjurer -DefeatSheet -PocketMin 1 -FigureMargin 0.12 -NoWhite
+-ColorToAlpha -HotCores`. `-HotCores` adapts the colour-to-alpha step to fire: amber and orange glow
+is un-blended from white too (also over his dark body), a clearly yellow pale pixel (fire's hot core)
+stays solid instead of turning olive, and a half see-through pixel surrounded by fire is filled as a
+glowing core. Drawn with `scale = 1.09`. The Midjourney frames are kept in `anim/conjurer_mj/`.
+
+**Checking direction.** Before offering a clip, track where its magic is: the centre of the bright,
+saturated pixels outside the pose, frame by frame. During the throw it must only move right (in
+20ths of the width, e.g. `6 6 7 9 11 14 16`); a dip toward the figure's left side (`15 13 9 7 4`)
+means the magic swings behind or crosses the body, and the clip is out, however good it looks in
+a few stills.
+
+## Revive (one per avatar, Google Flow, 2026-11-27)
+
+Played in the revive popup when you spend essence to get back up (`avatar_<name>_revive.webp`).
+Veo 3.1 Lite, 9:16, x2 each, silent, project `fcb5346a-…`, 60 credits. **Start** = the last frame of
+the avatar's defeat clip (`anim/<name>/defeat/frame_47.png`, kneeling), **End** = its idle still, so
+the clip begins exactly where the collapse ended and finishes in the idle pose. The prompt: `{Who}
+kneels slumped on the ground, defeated, head bowed, and faces the right edge of the frame. Silent,
+mouth closed … A soft {colour} shimmer gathers around {him/her} like a healing aura and faint motes of
+{colour} light drift upward. Slowly {he/she} lifts {his/her} head, {his/her} staff rises from the
+ground into {his/her} hand, glowing softly, and {he/she} rises to {his/her} feet, steady and strong
+again, ending standing tall in exactly the pose of the last image, holding the staff. {He/She} stays in
+place, {he/she} does not walk. The whole clip is the rising motion, {he/she} reaches the standing pose
+only at the very end.` plus the usual static-camera, white-background, flat-style ending and `Deep
+saturated {colour} glow, no white glare, no bright flash.`
+
+| Avatar | Pick | Frames used | Notes |
+|---|---|---|---|
+| mage | M2 (`ANqvLOaK6nRG…`) | 0.4–7.3 s | blue aura; the staff appears on his right and swings over in front of his face to his left, as in the idle pose. M1 (`ANqvLOZIkdhP…`) blurred the staff to a glow mid-swing |
+| sorceress | S1 (`ANqvLOYdCVjR…`) | 0.3–7.9 s | violet aura; S2 (`ANqvLOYC4e0H…`) washed the whole background pale cream near the end, so it was out |
+| conjurer | C1 (`ANqvLOaN-pk4…`) | 0.3–7.3 s | fire at his feet and embers; the staff stays on his idle side. C2 (`ANqvLOa8fw3o…`) had a heavier orange halo |
+
+The 48 frames are in `anim/<name>/revive/`. `cut-avatar.ps1` cuts `revive/` with the other clips and
+the same crop (the revive takes no part in choosing it, so the other sheets come out unchanged).
+For the revive only:
+- its figure mask (for `-ColorToAlpha`) covers both the kneeling and the standing figure;
+- its glow fades out over 24 px at the clip's sides and top instead of being cut off in a straight line
+  (a crystal held near the edge);
+- with `-HotCores`, the white-hot-core rules are off. They took the orange glow hugging his outline and
+  the pale staff as it appears for fire cores, and painted a cream rim.
+
+`-ReviveGlow` (mage and sorceress) also un-blends the revive's aura from the white background
+whatever its colour, and inside the figure mask too when it is bright, clearly blue or violet
+light. Without it the sorceress's violet aura was a flat pale-violet blob and the mage had pale cyan
+rims. Their skin, robes, hair, the mage's grey-blue beard and his white crystal never match that rule.
+
+Cut with:
+- `cut-avatar.ps1 -Avatar mage … -ColorToAlpha -ReviveGlow`
+- `cut-avatar.ps1 -Avatar sorceress … -NoWhite -ReviveGlow`
+- the conjurer's usual command.
+
+The sorceress's other sheets were restored from git after the re-cut, since the `-NoWhite` rules have
+been tuned for the mage since she was cut. Checked on the dark game background: no white or pale
+patches, and each last frame matches the idle pose.

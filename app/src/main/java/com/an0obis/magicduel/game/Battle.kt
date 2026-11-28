@@ -99,6 +99,11 @@ class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float, val castSc
         return move
     }
 
+    /** Back to full HP (a revive). */
+    internal fun restore() {
+        hp = maxHp
+    }
+
     internal fun takeDamage(amount: Int) {
         hp = (hp - amount).coerceAtLeast(0)
     }
@@ -173,6 +178,12 @@ sealed interface BattleEvent {
     /** The globe pushed out of the field hit [target]. */
     data class PushOutHit(val target: Side, val damage: Int, val element: Element) : BattleEvent
     data class GameOver(val winner: Side) : BattleEvent
+
+    /** You reached 0 HP: the duel pauses for a revive ([revivesSoFar] in this duel so far). */
+    data class PlayerDown(val revivesSoFar: Int) : BattleEvent
+
+    /** You came back with full HP (the [count]-th revive in this duel). */
+    data class Revived(val count: Int) : BattleEvent
 }
 
 /**
@@ -263,7 +274,7 @@ class Battle(
 
     /** The player taps the spell at (row, col). Returns false if it can't be cast right now. */
     fun tryCast(row: Int, col: Int): Boolean {
-        if (!started || winner != null || player.isCasting) return false
+        if (!started || winner != null || playerDown || player.isCasting) return false
         if (row !in 0 until spells.rows || col !in 0 until spells.cols) return false
         if (!spells.isAvailable(row, col)) return false
         val element = spells.take(row, col)
@@ -311,7 +322,7 @@ class Battle(
      * every empty cell of that column. Returns false if it can't be cast right now (see [canPlayerCastWall]).
      */
     fun tryCastWall(column: Int): Boolean {
-        if (!started || winner != null || player.isCasting) return false
+        if (!started || winner != null || playerDown || player.isCasting) return false
         if (column !in 0 until board.cols || !canPlayerCastWall(column)) return false
         player.startCast(WallSpell(column))
         events += BattleEvent.WallCastStarted(Side.PLAYER, column)
@@ -320,7 +331,7 @@ class Battle(
 
     fun update(dt: Float) {
         time += dt
-        if (winner == null && started) {
+        if (winner == null && !playerDown && started) {
             when (val move = player.advance(dt)) {
                 is Spell -> {
                     launch(Side.PLAYER, move.shot)
@@ -334,7 +345,7 @@ class Battle(
             }
             updateBot(dt)
             updateProjectiles(dt)
-        } else if (winner != null) {
+        } else if (winner != null || playerDown) {
             flying.removeAll { it.state == Projectile.State.DONE }
         }
         updateBoard(dt)
@@ -433,7 +444,7 @@ class Battle(
                 else -> Unit
             }
         }
-        while (phase == Phase.IDLE && winner == null) {
+        while (phase == Phase.IDLE && winner == null && !playerDown) {
             // Finished wall casts first: they only fill empty cells and the field stays still.
             pendingWalls.removeFirstOrNull()?.let { (side, column) ->
                 raiseWalls(side, column)
@@ -569,16 +580,60 @@ class Battle(
     }
 
     private fun hurt(side: Side, amount: Int) {
-        if (winner != null) return
+        if (winner != null || playerDown) return
         val target = caster(side)
         target.takeDamage(amount)
-        if (target.hp <= 0) {
-            winner = side.opponent
-            player.cancelCast()
+        if (target.hp > 0) return
+        if (side == Side.PLAYER) {
+            // You are down, not out: the duel pauses until you revive or give up. Your cast is called
+            // off (the spells come back) and every shot on its way vanishes, so a revive doesn't
+            // start under fire.
+            cancelCast()
             enemy.cancelCast()
             flying.forEach { it.state = Projectile.State.DONE }
-            events += BattleEvent.GameOver(side.opponent)
+            playerDown = true
+            events += BattleEvent.PlayerDown(revives)
+            return
         }
+        end(side.opponent)
+    }
+
+    private fun end(winner: Side) {
+        this.winner = winner
+        player.cancelCast()
+        enemy.cancelCast()
+        flying.forEach { it.state = Projectile.State.DONE }
+        events += BattleEvent.GameOver(winner)
+    }
+
+    /**
+     * True while you are at 0 HP and the duel is paused, waiting for [revive] or [giveUp]. Nobody
+     * casts, nothing flies; the field only settles.
+     */
+    var playerDown = false
+        private set
+
+    /** How many times you revived in this duel (the next revive costs Economy.reviveCost(revives + 1)). */
+    var revives = 0
+        private set
+
+    /** Brings you back with full HP; the duel goes on from where it stopped (the bot waits a moment). */
+    fun revive(): Boolean {
+        if (!playerDown) return false
+        playerDown = false
+        revives++
+        player.restore()
+        botWait = max(botWait, Rules.REVIVE_GRACE)
+        events += BattleEvent.Revived(revives)
+        return true
+    }
+
+    /** You don't revive: the duel ends as a defeat. */
+    fun giveUp(): Boolean {
+        if (!playerDown) return false
+        playerDown = false
+        end(Side.ENEMY)
+        return true
     }
 
     private fun snapshotPositions() {

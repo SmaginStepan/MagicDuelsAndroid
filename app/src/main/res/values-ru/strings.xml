@@ -68,6 +68,29 @@
     <string name="avatar_free">Бесплатно</string>
     <string name="avatar_more">Скоро новые аватары</string>
 
+    <!-- Эссенция: ежедневный подарок, воскрешения и магазин -->
+    <string name="shop">Магазин</string>
+    <string name="daily_title">Подарок дня</string>
+    <string name="daily_streak_fmt">День %1$d подряд</string>
+    <string name="daily_base">Эссенция дня</string>
+    <string name="daily_bonus">Бонус за серию</string>
+    <string name="daily_total">Итого</string>
+    <string name="daily_hint">Заходите завтра за бонусом побольше. Пропустите день — серия начнётся заново.</string>
+    <string name="collect">Забрать</string>
+    <string name="revive_title">Вы пали!</string>
+    <string name="revive_msg">Воскресните с полным здоровьем и продолжайте бой. Каждое следующее воскрешение в дуэли стоит вдвое дороже.</string>
+    <string name="revive_short">Не хватает эссенции. Возьмите ещё в магазине или сдайтесь в этой дуэли.</string>
+    <string name="you_have_fmt">У вас %1$d</string>
+    <string name="revive">Воскреснуть</string>
+    <string name="give_up">Сдаться</string>
+    <string name="reviving">Воскрешение…</string>
+    <string name="revived">Снова в бою!</string>
+    <string name="shop_essence">Наборы эссенции</string>
+    <string name="shop_avatars">Аватары</string>
+    <string name="shop_avatars_soon">Скоро здесь появятся новые аватары.</string>
+    <string name="shop_free_test">Бесплатно · тест</string>
+    <string name="shop_soon_msg">Покупки скоро появятся.</string>
+
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">
         <item>Чучело-мишень</item>

@@ -72,6 +72,29 @@
     <string name="avatar_free">Free</string>
     <string name="avatar_more">More avatars soon</string>
 
+    <!-- Essence: the daily gift, revives and the shop -->
+    <string name="shop">Shop</string>
+    <string name="daily_title">Daily gift</string>
+    <string name="daily_streak_fmt">Day %1$d in a row</string>
+    <string name="daily_base">Daily essence</string>
+    <string name="daily_bonus">Streak bonus</string>
+    <string name="daily_total">Total</string>
+    <string name="daily_hint">Come back tomorrow for a bigger bonus. Miss a day and the streak starts over.</string>
+    <string name="collect">Collect</string>
+    <string name="revive_title">You fell!</string>
+    <string name="revive_msg">Revive with full health and fight on. Each revive in a duel costs twice as much as the last.</string>
+    <string name="revive_short">Not enough essence to revive. Get more in the shop, or give up this duel.</string>
+    <string name="you_have_fmt">You have %1$d</string>
+    <string name="revive">Revive</string>
+    <string name="give_up">Give up</string>
+    <string name="reviving">Reviving…</string>
+    <string name="revived">Back on your feet!</string>
+    <string name="shop_essence">Essence packs</string>
+    <string name="shop_avatars">Avatars</string>
+    <string name="shop_avatars_soon">New avatars will appear here soon.</string>
+    <string name="shop_free_test">Free · test</string>
+    <string name="shop_soon_msg">Purchases are coming soon.</string>
+
     <!-- Opponents (indices from game/Opponents.kt) -->
     <string name="opponent_fmt">%1$s %2$s</string>
     <string-array name="dummy_names">

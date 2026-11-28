@@ -2,7 +2,8 @@
 #
 #   cut-avatar.ps1 -Avatar mage -DefeatSheet                 player avatar: art/avatars/anim/mage/
 #       cast1..3/, defeat/ -> res/drawable-nodpi/avatar_mage.webp (idle), avatar_mage_cast1..3.webp,
-#       avatar_mage_defeat.webp (sheets) and avatar_mage_defeated.webp (the defeat's last frame)
+#       avatar_mage_defeat.webp (sheets) and avatar_mage_defeated.webp (the defeat's last frame);
+#       revive/ (rising from the defeated pose to the idle one) -> avatar_mage_revive.webp
 #   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_01  enemy: art/enemies/anim/bot_01/cast1/,
 #       defeat/ -> bot_01.webp, bot_01_cast1.webp, bot_01_defeated.webp
 #   cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar dummy -NoIdle   dummy: defeat/ -> dummy_defeated.webp
@@ -11,6 +12,11 @@
 #   -FigureMargin 0.1 crops to the figure (first frames and the defeated pose) plus 10% of the height,
 #       letting magic that fills the frame run past the edges (Google Flow clips: the sorceress)
 #   -NoWhite erases pale whitish parts of the magic, which read as flat white patches in the game
+#   -FillCores (with -NoWhite) fills a white core enclosed by the spell with its colour instead of a hole (the mage)
+#   -ColorToAlpha un-blends pale magic outside the figure from white (white clear, pale blue a faint glow): the mage
+#   -HotCores (with -ColorToAlpha) also un-blends warm glow and fills white-hot cores of fire: the conjurer
+#   -ReviveGlow un-blends the revive clip's aura of any colour from white (colour-to-alpha for that clip
+#       only, the others are cut as before): the sorceress's violet aura
 #
 # Each clip folder holds frame_00..NN.png. The white background is removed by flood-filling from the
 # image border through pixels close to the background colour, with a soft edge and the colour
@@ -19,7 +25,7 @@
 # the animations and the defeated image line up exactly.
 param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
       [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow,
-      [double]$FigureMargin = 0, [switch]$NoWhite)
+      [double]$FigureMargin = 0, [switch]$NoWhite, [switch]$FillCores, [switch]$ColorToAlpha, [switch]$HotCores, [switch]$ReviveGlow)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -39,7 +45,16 @@ public static class AvatarCut {
     static double PocketSeed = 18; static int PocketMin = 12;
     static bool Shadow = false;   // remove a pale ground shadow under the feet (see Cut)
     static bool NoWhite = false;   // erase pale whitish areas of magic (see Cut)
+    static bool FillCores = false;   // with NoWhite, fill enclosed spell cores with the spell's colour
+    static bool ColorToAlpha = false;   // un-blend pale magic from white instead of erasing it (see ToAlpha)
+    static bool HotCores = false;   // with ColorToAlpha: warm glow too, and fill white-hot cores (fire)
+    static bool[] Mask;   // where the figure stands in the current clip's first frame (ColorToAlpha)
+    static bool GlowClip; // -ReviveGlow, while cutting the revive clip: any bright colour outside the figure is glow
+    static bool ReviveClip; // while cutting the revive clip
+    const int EdgeFade = 24;   // the revive's glow fades out over this many pixels at the clip's sides and top
+    const double CoreRatio = 0.75;   // share of a pocket's surroundings that must be magic to count as a core
     const byte GlowAlpha = 110;   // opacity of the tint in white pockets inside magic (see Cut)
+    const byte CoreAlpha = 210;   // opacity of a filled core (-FillCores)
 
     static byte[] Read(Bitmap b) {
         BitmapData d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -113,8 +128,12 @@ public static class AvatarCut {
             // White ringed by magic can be a spell's hot core or the background seen through a rune
             // ring, and their sizes overlap: both become a soft see-through tint of the magic around
             // them (its own colour), so a core glows and a ring gets a faint glowing fill.
-            int tint = MagicTint(px, comp, seen, W, H);
-            foreach (int k in comp) { reached[k] = true; if (tint >= 0 && !NoWhite) glow[k] = tint + 1; }   // -NoWhite: see-through
+            double ratio;
+            int tint = MagicTint(px, comp, seen, W, H, out ratio);
+            // -NoWhite: see-through, except (with -FillCores) a hot core all but enclosed by the spell,
+            // which is filled with the spell's own colour rather than left as a hole.
+            bool fill = tint >= 0 && (!NoWhite || (FillCores && ratio >= CoreRatio));
+            foreach (int k in comp) { reached[k] = true; if (fill) glow[k] = tint + 1; }
         }
         // A ground shadow Midjourney drew anyway (pale warm grey, a band under the feet): with -Shadow,
         // grow the background into pale, nearly colourless pixels in the bottom fifth of the frame,
@@ -143,7 +162,7 @@ public static class AvatarCut {
             if (glow[k] != 0) {
                 int t = glow[k] - 1;
                 o[i] = (byte)(t & 255); o[i + 1] = (byte)((t >> 8) & 255); o[i + 2] = (byte)((t >> 16) & 255);
-                o[i + 3] = GlowAlpha;
+                o[i + 3] = FillCores ? CoreAlpha : GlowAlpha;
                 continue;
             }
             double a = reached[k] ? Math.Min(1.0, Math.Max(0.0, (dist[k] - Hard) / (Soft - Hard))) : 1.0;
@@ -172,17 +191,24 @@ public static class AvatarCut {
             if (glow[k] == 0) continue;
             int t = glow[k] - 1, i = k * 4;
             e[i] = (byte)(t & 255); e[i + 1] = (byte)((t >> 8) & 255); e[i + 2] = (byte)((t >> 16) & 255);
-            e[i + 3] = GlowAlpha;
+            e[i + 3] = FillCores ? CoreAlpha : GlowAlpha;
         }
         // With -NoWhite, pale whitish areas go: the white or lavender-white parts of magic (a swirl's
         // middle, an orb's rim, the tint in white pockets) that read as flat white patches in the game.
         // Saturated magic stays, and so does the figure (skin and robes are darker or more coloured).
         if (NoWhite) for (int k = 0; k < W * H; k++) {
             int i = k * 4;
-            if (e[i + 3] == 0) continue;
+            if (e[i + 3] == 0 || glow[k] != 0) continue;
             int mx = Math.Max(e[i], Math.Max(e[i + 1], e[i + 2])), mn = Math.Min(e[i], Math.Min(e[i + 1], e[i + 2]));
             if ((mn >= 185 && mx - mn <= 70) || (mn >= 150 && mx - mn <= 45)) e[i + 3] = 0;   // whitish, or light grey
+            // The soft edge of the magic: half see-through and pale once un-blended from the white
+            // background, it reads as a white rim; keep only edge pixels with real colour.
+            else if (e[i + 3] < 250 && mx >= 120 && (mx - mn) * 100 < 40 * mx) e[i + 3] = 0;
+            // A very light, faint-coloured glow (pale sky blue round a frost sphere) reads as a white halo
+            // too; the figure's light parts (a grey beard) are darker than this.
+            else if (mx >= 215 && (mx - mn) * 100 < 36 * mx) e[i + 3] = 0;
         }
+        if (ColorToAlpha && Mask != null) ToAlpha(e, px, W, H);
         return e;
     }
 
@@ -191,8 +217,8 @@ public static class AvatarCut {
     // is ringed by robe, hair or skin. Such a pocket stays (it shows as the spell's white core).
     // The tint for a pocket inside magic (see the pocket loop in Cut), as 0xRRGGBB in BGR byte order
     // (b | g << 8 | r << 16), or -1 when the pocket isn't inside magic.
-    static int MagicTint(byte[] px, List<int> comp, bool[] inComp, int W, int H) {
-        int ring = 0, magic = 0; long sb = 0, sg = 0, sr = 0;
+    static int MagicTint(byte[] px, List<int> comp, bool[] inComp, int W, int H, out double ratio) {
+        int ring = 0, magic = 0, thick = 0; long sb = 0, sg = 0, sr = 0;
         foreach (int k in comp) {
             int x = k % W, y = k / W;
             for (int dy = -2; dy <= 2; dy += 2) for (int dx = -2; dx <= 2; dx += 2) {
@@ -203,12 +229,102 @@ public static class AvatarCut {
                 int i = n * 4;
                 int mx = Math.Max(px[i], Math.Max(px[i + 1], px[i + 2])), mn = Math.Min(px[i], Math.Min(px[i + 1], px[i + 2]));
                 ring++;
-                if (mx >= 180 && mx - mn >= 35) { magic++; sb += px[i]; sg += px[i + 1]; sr += px[i + 2]; }
+                if (mx >= 180 && mx - mn >= 35) {
+                    magic++; sb += px[i]; sg += px[i + 1]; sr += px[i + 2];
+                    // Thick magic around it (a sphere's core), not a thin ring of runes: still magic 24 px further out.
+                    int fx = x + dx * 12, fy = y + dy * 12;
+                    if (fx >= 0 && fy >= 0 && fx < W && fy < H) {
+                        int j = (fy * W + fx) * 4;
+                        int fmx = Math.Max(px[j], Math.Max(px[j + 1], px[j + 2])), fmn = Math.Min(px[j], Math.Min(px[j + 1], px[j + 2]));
+                        if (fmx >= 140 && fmx - fmn >= 35) thick++;
+                    }
+                }
             }
         }
+        ratio = ring == 0 ? 0 : thick / (double)ring;   // the share of its surroundings that is thick magic
         if (ring == 0 || magic * 2 <= ring) return -1;
         int b = (int)(sb / magic), g = (int)(sg / magic), r = (int)(sr / magic);   // the magic's own colour
+        if (FillCores) Saturate(ref b, ref g, ref r);
         return b | g << 8 | r << 16;
+    }
+
+    // The figure in a cut frame (its opaque pixels), grown by 4 px: kept as it is by ToAlpha.
+    static bool[] FigureMask(byte[] e, int W, int H) {
+        var m = new bool[W * H];
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            if (e[(y * W + x) * 4 + 3] < 128) continue;
+            for (int dy = -4; dy <= 4; dy++) for (int dx = -4; dx <= 4; dx++) {
+                int xx = x + dx, yy = y + dy;
+                if (xx >= 0 && yy >= 0 && xx < W && yy < H) m[yy * W + xx] = true;
+            }
+        }
+        return m;
+    }
+
+    // -ColorToAlpha: outside the figure, every pale or bluish-bright pixel of the video is un-blended
+    // from the white background with the least opacity that explains it (GIMP's colour-to-alpha):
+    // white goes clear, pale blue becomes a faint pure-blue glow, strong blue stays strong. So frost
+    // magic loses its white halo and patches without holes.
+    static void ToAlpha(byte[] e, byte[] px, int W, int H) {
+        for (int k = 0; k < W * H; k++) {
+            int i = k * 4, b = px[i], g = px[i + 1], r = px[i + 2];
+            int mx = Math.Max(b, Math.Max(g, r)), mn = Math.Min(b, Math.Min(g, r));
+            // -HotCores (a dark figure): bright pixels are magic even over the body. -ReviveGlow: the
+            // aura also covers where the figure will stand; bright, clearly blue or violet light there
+            // is aura (skin, a red robe, black hair, a grey-blue beard and a white crystal never are).
+            if (Mask[k] && !HotCores && !(GlowClip && mx >= 200 && b >= r && b - mn >= 30)) continue;
+            bool warm = HotCores && r - b >= 60 && mx >= 170;   // fire: amber and orange glow too
+            bool aura = GlowClip && mx >= 150 && mx - mn >= 40;   // -ReviveGlow: a bright aura of any colour
+            if (!(mn >= 185 || (b - r >= 40 && mx >= 170) || warm || aura)) continue;
+            // -HotCores: a clearly yellow pale pixel is fire's hot core (half see-through it reads as
+            // olive on the dark background): keep it solid. The paler cream halo still fades out.
+            // (Not in the revive: its pale gold is the staff appearing.)
+            if (HotCores && !ReviveClip && mn >= 110 && r - b >= 95 && r >= 235 && g >= 200) { e[i] = (byte)b; e[i + 1] = (byte)g; e[i + 2] = (byte)r; e[i + 3] = 255; continue; }
+            double a = (255 - mn) / 255.0;
+            if (a < 0.08) { e[i + 3] = 0; continue; }
+            e[i] = (byte)Math.Max(0, Math.Min(255, (b - (1 - a) * 255) / a));
+            e[i + 1] = (byte)Math.Max(0, Math.Min(255, (g - (1 - a) * 255) / a));
+            e[i + 2] = (byte)Math.Max(0, Math.Min(255, (r - (1 - a) * 255) / a));
+            e[i + 3] = (byte)(a * 255);
+        }
+        // Not in the revive: there the glow hugging the figure and the staff appearing near the edge
+        // would be taken for white-hot cores and filled with cream, and its fire has no such cores.
+        if (HotCores && !ReviveClip) FillHotCores(e, px, W, H);
+    }
+
+    // -HotCores: a fire spell's white-hot centre went clear in ToAlpha and shows the dark game
+    // background as a hole. Where strong magic surrounds a clear near-white pixel (in 6 of 8
+    // directions within 48 px; the frame edge counts when fire runs off it), fill it with that magic's colour
+    // lifted halfway to white: a glowing core.
+    static void FillHotCores(byte[] e, byte[] px, int W, int H) {
+        byte[] s = (byte[])e.Clone();
+        int[] ddx = { 1, 1, 0, -1, -1, -1, 0, 1 }, ddy = { 0, 1, 1, 1, 0, -1, -1, -1 };
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int k = y * W + x, i = k * 4;
+            if (Mask[k] && !HotCores) continue;   // any alpha: a pale core that ToAlpha made half see-through reads as olive
+            if (s[i + 3] >= 200) continue;   // already solid: a half see-through pixel inside fire is its hot core
+            if (px[i + 2] - px[i] < 20) continue;   // pure white in the video (background inside a rune ring), not a warm core
+            int hits = 0, edge = 0, sb = 0, sg = 0, sr = 0;
+            for (int d = 0; d < 8 && hits + edge + (8 - d) >= 6; d++) {
+                for (int rr = 1; rr <= 48; rr++) {
+                    int xx = x + ddx[d] * rr, yy = y + ddy[d] * rr;
+                    if (xx < 0 || yy < 0 || xx >= W || yy >= H) { if (rr > 1) edge++; break; }   // fire running off the frame
+                    int j = (yy * W + xx) * 4;
+                    int mx = Math.Max(s[j], Math.Max(s[j + 1], s[j + 2])), mn = Math.Min(s[j], Math.Min(s[j + 1], s[j + 2]));
+                    if (s[j + 3] >= 150 && mx >= 150 && mx - mn >= 60) { hits++; sb += s[j]; sg += s[j + 1]; sr += s[j + 2]; break; }
+                }
+            }
+            if (hits < 3 || hits + edge < 6) continue;   // 6 of 8 directions: fire, or the frame edge beyond it
+            e[i] = (byte)((sb / hits + 255) / 2); e[i + 1] = (byte)((sg / hits + 255) / 2); e[i + 2] = (byte)((sr / hits + 255) / 2);
+            e[i + 3] = 235;
+        }
+    }
+
+    // Pushes a colour away from grey (30% more saturated), so a filled core reads as the spell's
+    // colour, not a grey-blue patch.
+    static void Saturate(ref int b, ref int g, ref int r) {
+        int l = (b + g + r) / 3;
+        b = Math.Max(0, Math.Min(255, l + (b - l) * 13 / 10)); g = Math.Max(0, Math.Min(255, l + (g - l) * 13 / 10)); r = Math.Max(0, Math.Min(255, l + (r - l) * 13 / 10));
     }
 
     static bool InsideMagic(byte[] px, List<int> comp, bool[] inComp, int W, int H) {
@@ -258,7 +374,11 @@ public static class AvatarCut {
                     if (magic(n)) { hits++; sb += px[n * 4]; sg += px[n * 4 + 1]; sr += px[n * 4 + 2]; break; }
                 }
             }
-            if (hits >= 7) fill.Add(new[] { k, (sb / hits + 255) / 2, (sg / hits + 255) / 2, (sr / hits + 255) / 2 });
+            // -FillCores: the spell's own colour (not lightened), so -NoWhite keeps it.
+            if (hits < 7) continue;
+            int cb = sb / hits, cg = sg / hits, cr = sr / hits;
+            if (FillCores) Saturate(ref cb, ref cg, ref cr);
+            fill.Add(FillCores ? new[] { k, cb, cg, cr } : new[] { k, (sb / hits + 255) / 2, (sg / hits + 255) / 2, (sr / hits + 255) / 2 });
         }
         foreach (int[] f in fill) { int i = f[0] * 4; o[i] = (byte)f[1]; o[i + 1] = (byte)f[2]; o[i + 2] = (byte)f[3]; o[i + 3] = 215; }
     }
@@ -304,28 +424,67 @@ public static class AvatarCut {
     // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
     // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
     // defeatIndex) unless null. All share one crop.
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin, bool noWhite) {
-        PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow; NoWhite = noWhite;
+    // The revive's glow can reach the clip's sides and top (a crystal held near the edge): fade it out
+    // there instead of cutting it off in a straight line.
+    static void FadeEdges(byte[] e, int W, int H) {
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int d = Math.Min(y, Math.Min(x, W - 1 - x));
+            if (d >= EdgeFade) continue;
+            int i = (y * W + x) * 4;
+            e[i + 3] = (byte)(e[i + 3] * d / EdgeFade);
+        }
+    }
+
+    // reviveIndex: the clip that rises from the defeated pose to the idle one (or -1). It takes no part
+    // in the crop (its ends are the defeated and idle poses, already framed), and with ColorToAlpha its
+    // figure mask covers both ends, the kneeling and the standing figure.
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int reviveIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin, bool noWhite, bool fillCores, bool colorToAlpha, bool hotCores, bool reviveGlow) {
+        PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow; NoWhite = noWhite; FillCores = fillCores; ColorToAlpha = colorToAlpha; HotCores = hotCores;
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
-        foreach (string dir in dirs) {
+        for (int di = 0; di < dirs.Length; di++) {
+            string dir = dirs[di];
+            // -ReviveGlow: the revive clip's aura is un-blended from white (ColorToAlpha), whatever its colour.
+            GlowClip = reviveGlow && di == reviveIndex;
+            ReviveClip = di == reviveIndex;
+            ColorToAlpha = colorToAlpha || GlowClip;
             var frames = new List<byte[]>();
-            foreach (string f in Directory.GetFiles(dir, "frame_*.png").OrderBy(f => f))
-                using (Bitmap b = new Bitmap(f)) { W = b.Width; H = b.Height; frames.Add(Cut(Read(b), W, H)); }
+            Mask = null;
+            string[] files = Directory.GetFiles(dir, "frame_*.png").OrderBy(f => f).ToArray();
+            if (ColorToAlpha && di == reviveIndex) {
+                bool[] both = null;
+                foreach (string f in new[] { files[0], files[files.Length - 1] })
+                    using (Bitmap b = new Bitmap(f)) {
+                        W = b.Width; H = b.Height;
+                        bool[] m = FigureMask(Cut(Read(b), W, H), W, H);
+                        if (both == null) both = m; else for (int k = 0; k < m.Length; k++) both[k] |= m[k];
+                    }
+                Mask = both;
+            }
+            foreach (string f in files)
+                using (Bitmap b = new Bitmap(f)) {
+                    W = b.Width; H = b.Height;
+                    byte[] cut = Cut(Read(b), W, H);
+                    // -ColorToAlpha: the clip's first frame (the pose) marks where the figure is.
+                    if (ColorToAlpha && frames.Count == 0 && Mask == null) { Mask = FigureMask(cut, W, H); cut = Cut(Read(b), W, H); }
+                    if (ReviveClip) FadeEdges(cut, W, H);
+                    frames.Add(cut);
+                }
             casts.Add(frames);
         }
+        ReviveClip = false; GlowClip = false;
         int x0 = int.MaxValue, y0 = int.MaxValue, x1 = -1, y1 = -1;
         Rectangle crop;
         if (figureMargin > 0) {
             // Frame the figure, not its magic: bounds of each clip's first frame (the pose) and the
             // defeat's last frame, widened by figureMargin of the frame height; effects that reach
             // further (a bolt flying out, a blast filling the frame) are cut at the edges.
-            foreach (var frames in casts) Bounds(frames[0], W, H, ref x0, ref y0, ref x1, ref y1);
+            for (int s = 0; s < casts.Count; s++) if (s != reviveIndex) Bounds(casts[s][0], W, H, ref x0, ref y0, ref x1, ref y1);
             if (defeatIndex >= 0) { var d = casts[defeatIndex]; Bounds(d[d.Count - 1], W, H, ref x0, ref y0, ref x1, ref y1); }
             int fm = (int)(H * figureMargin);
             crop = Rectangle.FromLTRB(Math.Max(0, x0 - fm), Math.Max(0, y0 - fm), Math.Min(W, x1 + fm + 1), Math.Min(H, y1 + 2));
         } else {
-            foreach (var frames in casts) foreach (byte[] f in frames) Bounds(f, W, H, ref x0, ref y0, ref x1, ref y1);
+            for (int s = 0; s < casts.Count; s++) if (s != reviveIndex) foreach (byte[] f in casts[s]) Bounds(f, W, H, ref x0, ref y0, ref x1, ref y1);
             int m = (int)(H * 0.02);
             crop = Rectangle.FromLTRB(Math.Max(0, x0 - m), Math.Max(0, y0 - m), Math.Min(W, x1 + m + 1), Math.Min(H, y1 + 2));
         }
@@ -358,13 +517,14 @@ $root = Join-Path $PSScriptRoot '..\..'
 $anim = (Resolve-Path (Join-Path $root "$Art\anim\$Avatar")).Path
 $res = (Resolve-Path (Join-Path $root 'app\src\main\res\drawable-nodpi')).Path
 $base = "$Prefix$Avatar"
-$dirs = @(Get-ChildItem $anim -Directory | Where-Object { $_.Name -like 'cast*' -or $_.Name -eq 'defeat' } | Sort-Object Name | ForEach-Object { $_.FullName })
+$dirs = @(Get-ChildItem $anim -Directory | Where-Object { $_.Name -like 'cast*' -or $_.Name -eq 'defeat' -or $_.Name -eq 'revive' } | Sort-Object Name | ForEach-Object { $_.FullName })
 $defeatIndex = [array]::IndexOf(@($dirs | ForEach-Object { Split-Path $_ -Leaf }), 'defeat')
+$reviveIndex = [array]::IndexOf(@($dirs | ForEach-Object { Split-Path $_ -Leaf }), 'revive')
 $sheets = @($dirs | ForEach-Object {
     $leaf = Split-Path $_ -Leaf
     if ($leaf -eq 'defeat' -and -not $DefeatSheet) { $null } else { Join-Path $res ("{0}_{1}.png" -f $base, $leaf) }
 })
 $idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
 $defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
-[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin, $NoWhite.IsPresent)
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $reviveIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin, $NoWhite.IsPresent, $FillCores.IsPresent, $ColorToAlpha.IsPresent, $HotCores.IsPresent, $ReviveGlow.IsPresent)
 & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })

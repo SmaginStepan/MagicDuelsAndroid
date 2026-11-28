@@ -27,6 +27,11 @@ class Avatar(
     val glow: Int,
     val paid: Boolean = false,
     val scale: Float = 1f,
+    /**
+     * Its revive in the revive popup (a sheet like the casts): rising from the defeated pose to the
+     * idle one. Without one the popup plays the collapse backwards.
+     */
+    val reviveRes: Int? = null,
 )
 
 object Avatars {
@@ -34,7 +39,9 @@ object Avatars {
         "mage", R.string.avatar_mage, R.drawable.avatar_mage,
         intArrayOf(R.drawable.avatar_mage_cast1, R.drawable.avatar_mage_cast2, R.drawable.avatar_mage_cast3),
         R.drawable.avatar_mage_defeat, R.drawable.avatar_mage_defeated,
-        tipX = 0.286f, tipY = 0.172f, glow = 0xFFBFE4FF.toInt(),
+        // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); room for magic over his head.
+        tipX = 0.173f, tipY = 0.280f, glow = 0xFFBFE4FF.toInt(), scale = 1.10f,
+        reviveRes = R.drawable.avatar_mage_revive,
     )
     val SORCERESS = Avatar(
         "sorceress", R.string.avatar_sorceress, R.drawable.avatar_sorceress,
@@ -43,12 +50,15 @@ object Avatars {
         // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); the frame has room for magic
         // over her head, so it's drawn taller.
         tipX = 0.238f, tipY = 0.223f, glow = 0xFFB98CFF.toInt(), scale = 1.16f,
+        reviveRes = R.drawable.avatar_sorceress_revive,
     )
     val CONJURER = Avatar(
         "conjurer", R.string.avatar_conjurer, R.drawable.avatar_conjurer,
         intArrayOf(R.drawable.avatar_conjurer_cast1, R.drawable.avatar_conjurer_cast2, R.drawable.avatar_conjurer_cast3),
         R.drawable.avatar_conjurer_defeat, R.drawable.avatar_conjurer_defeated,
-        tipX = 0.825f, tipY = 0.156f, glow = 0xFFFFB347.toInt(),
+        // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); room for magic over his head.
+        tipX = 0.856f, tipY = 0.222f, glow = 0xFFFFB347.toInt(), scale = 1.09f,
+        reviveRes = R.drawable.avatar_conjurer_revive,
     )
 
     /** Every avatar, free ones first; the first is the default. */

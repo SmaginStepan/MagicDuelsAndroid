@@ -86,11 +86,30 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   move.
 
 ## Menu and tutorial
-- The game opens on a start menu: **Continue** (shows your level and next opponent), **Leaderboard**,
-  PvP duel ("coming soon") and **Options** (language, sound, your name, your avatar, and **Restart
-  game**, which asks first and then goes back to level 1 with the tutorial). In a duel, the **Menu**
-  button or Android Back returns to the menu (the duel pauses); Back on the menu closes the app.
+- The game opens on a start menu: your **essence** in the top right corner (a tap opens the shop),
+  **Continue** (shows your level and next opponent), and two by two **Leaderboard**, **Shop**, PvP duel
+  ("coming soon") and **Options** (language, sound, your name, your avatar, and **Restart game**, which
+  asks first and then goes back to level 1 with the tutorial; it keeps your essence and streak). In a
+  duel, the **Menu** button or Android Back returns to the menu (the duel pauses); Back on the menu
+  closes the app.
 - The first time the app opens, it asks your name (once, if none is set; Options can change it).
+
+## Essence, revives and the shop (`Economy.kt`)
+- **Essence** (the glowing crystal) pays for revives. A new player starts with **3**.
+- **Daily gift**: the first time the app opens on a new day (the phone's date), a popup shows the
+  7-day streak and today's gift: **1 essence** plus a **streak bonus** of 0, 1, 1, 2, 2, 3, 5 on days
+  1 to 7 in a row (1, 2, 2, 3, 3, 4, 6 in all, 21 a week). **Collect** adds it and the menu's counter
+  counts up. After day 7 the streak starts again at day 1; a missed day resets it to day 1. Turning the
+  phone's date back gives nothing.
+- **Going down**: at 0 HP you don't lose straight away. The duel pauses (your cast is called off and
+  shots on their way vanish), your avatar plays its collapse, then the **revive popup** shows it fallen,
+  what a revive costs and your essence: **Revive** or **Give up**. Revives in one duel cost **1, 2, 4,
+  8 …** essence. Revive plays the avatar rising back up in a glow of its crystal's colour (a clip of its
+  own per avatar), then the duel goes on with **full HP**; the bot waits at least 3 s before its next
+  cast. Without enough essence, **Shop** takes Revive's place. Give up ends the duel as a defeat (the
+  end card follows at once). Revives work against the dummies too and don't change the leaderboard.
+- **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
+  builds until Google Play billing is in) and, coming soon, paid avatars.
 
 ## Leaderboard
 - An online board of every player's **highest level** and name, on the ScoreServer service
@@ -130,9 +149,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   over each cast and throws the magic itself.
 - Win to go up a level; lose to retry the same level. Your level is saved on the phone.
 - The end card shows the loser's **defeated pose**: a beaten bot sinks into it on the field, the dummies
-  share one, and when you lose your avatar plays its collapse (2 s) before the card appears.
+  share one, and when you give up your fallen avatar (see Essence) is shown.
 
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 
 ## Not built yet
-Player levelling up / unlocking elements, PvP, paid avatars.
+Player levelling up / unlocking elements, PvP, paid avatars, buying essence (Google Play billing).
