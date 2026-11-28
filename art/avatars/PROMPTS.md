@@ -158,6 +158,28 @@ is un-blended from white too (also over his dark body), a clearly yellow pale pi
 stays solid instead of turning olive, and a half see-through pixel surrounded by fire is filled as a
 glowing core. Drawn with `scale = 1.09`. The Midjourney frames are kept in `anim/conjurer_mj/`.
 
+Re-cut later (2026-11-28) because white bounds were still visible on the dark game background. The
+problems were:
+- cream bands round the cast-1 vortex, with a black hole in its eye;
+- a cream fill in the cast-3 rune ring;
+- a beige crescent;
+- the grey blur of the swinging staff;
+- a white glint on the dropped staff in the defeat.
+
+`-HotCores` now also:
+- fills cores with the fire's own colour (a quarter of the way to white, not half);
+- fills a small see-through patch that is pale in the video and walled in by fire (a vortex's eye)
+  with a bright yellow core. The empty middle of a rune ring is too big, and a gap walled in by the
+  figure isn't counted;
+- ends with a pass where pale warm pixels get fire's saturation (cream turns yellow, beige orange),
+  grey is un-blended from white to a see-through dark, and other pale tints fade out. Over his own
+  pose only clearly pale pixels change;
+- fades fire out over 24 px at the clip's sides and top instead of cutting it off straight.
+
+The idle pose is unchanged apart from a slightly richer flame. Left as they are: the open spiral in
+the first vortex frame (cast 1, frame 8) and the orb opening as a broken ring (cast 2, frame 13),
+one frame each.
+
 **Checking direction.** Before offering a clip, track where its magic is: the centre of the bright,
 saturated pixels outside the pose, frame by frame. During the throw it must only move right (in
 20ths of the width, e.g. `6 6 7 9 11 14 16`); a dip toward the figure's left side (`15 13 9 7 4`)

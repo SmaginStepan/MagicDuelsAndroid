@@ -1912,12 +1912,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Start menu: your essence in the top right corner, continue or start, and a grid of two by two:
-     * leaderboard, shop, PvP (coming later) and options.
+     * Start menu: your essence in the top right corner, Continue (or Start) and PvP duel (coming later)
+     * as two big rows, then a row of three: leaderboard, shop and options.
      */
     private fun drawMenu(c: Canvas) {
         val cx = width / 2f
-        val contentH = 10.55f * u
+        val contentH = 11f * u
         val availH = height - safeTop - safeBottom
         val top = safeTop + max(0.6f * u, (availH - contentH) * 0.4f)
         val titleY = top + 1.1f * u
@@ -1947,20 +1947,20 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val cont = RectF(bx, by, bx + bw, by + 1.25f * u)
         drawButton(c, cont, s(if (played) R.string.continue_game else R.string.start_game), sub, primary = true, small = false)
         menuButtons["continue"] = cont
-        by = cont.bottom + 0.55f * u
+        // PvP duel: a row as big as Continue (it says "soon" until online duels exist).
+        val pvp = RectF(bx, cont.bottom + 0.35f * u, bx + bw, cont.bottom + 0.35f * u + 1.25f * u)
+        drawButton(c, pvp, s(R.string.pvp_duel), s(R.string.soon), primary = false, small = false)
+        menuButtons["pvp"] = pvp
+        by = pvp.bottom + 0.55f * u
         val sgap = 0.25f * u
-        val sw = (bw - sgap) / 2f
-        val sh = 0.9f * u
+        val sw = (bw - 2 * sgap) / 3f
         listOf(
-            Triple("leaderboard", R.string.leaderboard, false),
-            Triple("shop", R.string.shop, false),
-            Triple("pvp", R.string.pvp_duel, true),
-            Triple("options", R.string.options, false),
-        ).forEachIndexed { i, (id, title, soon) ->
-            val x = bx + (i % 2) * (sw + sgap)
-            val y = by + (i / 2) * (sh + sgap)
-            val r = RectF(x, y, x + sw, y + sh)
-            drawButton(c, r, s(title), if (soon) s(R.string.soon) else null, primary = false, small = true)
+            "leaderboard" to R.string.leaderboard,
+            "shop" to R.string.shop,
+            "options" to R.string.options,
+        ).forEachIndexed { i, (id, title) ->
+            val r = RectF(bx + i * (sw + sgap), by, bx + i * (sw + sgap) + sw, by + 0.9f * u)
+            drawButton(c, r, s(title), null, primary = false, small = true)
             menuButtons[id] = r
         }
         drawEssenceCounter(c)

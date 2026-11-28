@@ -208,7 +208,10 @@ public static class AvatarCut {
             // too; the figure's light parts (a grey beard) are darker than this.
             else if (mx >= 215 && (mx - mn) * 100 < 36 * mx) e[i + 3] = 0;
         }
-        if (ColorToAlpha && Mask != null) ToAlpha(e, px, W, H);
+        if (ColorToAlpha && Mask != null) {
+            ToAlpha(e, px, W, H);
+            if (HotCores) Dewhiten(e, W, H);
+        }
         return e;
     }
 
@@ -293,9 +296,11 @@ public static class AvatarCut {
     }
 
     // -HotCores: a fire spell's white-hot centre went clear in ToAlpha and shows the dark game
-    // background as a hole. Where strong magic surrounds a clear near-white pixel (in 6 of 8
-    // directions within 48 px; the frame edge counts when fire runs off it), fill it with that magic's colour
-    // lifted halfway to white: a glowing core.
+    // background as a hole. It is filled in the fire's own colours (white or cream would read as a
+    // white patch on the dark background):
+    // A half see-through warm pixel surrounded by strong magic (in 6 of 8 directions within 48 px; the
+    // frame edge counts when fire runs off it) takes that magic's colour, a quarter of the way to white:
+    // a glowing core. (The pure white eye of a vortex is FillWhiteEyes'.)
     static void FillHotCores(byte[] e, byte[] px, int W, int H) {
         byte[] s = (byte[])e.Clone();
         int[] ddx = { 1, 1, 0, -1, -1, -1, 0, 1 }, ddy = { 0, 1, 1, 1, 0, -1, -1, -1 };
@@ -315,8 +320,88 @@ public static class AvatarCut {
                 }
             }
             if (hits < 3 || hits + edge < 6) continue;   // 6 of 8 directions: fire, or the frame edge beyond it
-            e[i] = (byte)((sb / hits + 255) / 2); e[i + 1] = (byte)((sg / hits + 255) / 2); e[i + 2] = (byte)((sr / hits + 255) / 2);
+            e[i] = (byte)((sb / hits * 3 + 255) / 4); e[i + 1] = (byte)((sg / hits * 3 + 255) / 4); e[i + 2] = (byte)((sr / hits * 3 + 255) / 4);
             e[i + 3] = 235;
+        }
+        FillWhiteEyes(e, px, W, H);
+    }
+
+    // The white eye of a fire vortex (pure white in the video) went clear and shows the dark game
+    // background as a hole. A small patch of see-through pixels that are pale in the video, walled in by
+    // fire on (nearly) every side, becomes a bright yellow core. A large one (the empty middle of a
+    // rune ring), one touching the frame's edge (the background) or one walled in by the figure (the gap
+    // between an arm and the staff) stays clear.
+    const int MaxEye = 6000;
+    static void FillWhiteEyes(byte[] e, byte[] px, int W, int H) {
+        var seen = new bool[W * H];
+        var stack = new Stack<int>();
+        var comp = new List<int>();
+        int[] nx = { 1, -1, 0, 0 }, ny = { 0, 0, 1, -1 };
+        for (int k0 = 0; k0 < W * H; k0++) {
+            if (seen[k0] || !EyePixel(e, px, k0)) continue;
+            comp.Clear();
+            stack.Push(k0);
+            seen[k0] = true;
+            bool atEdge = false;
+            int border = 0, fire = 0;
+            while (stack.Count > 0) {
+                int k = stack.Pop();
+                comp.Add(k);
+                int x = k % W, y = k / W;
+                for (int d = 0; d < 4; d++) {
+                    int xx = x + nx[d], yy = y + ny[d];
+                    if (xx < 0 || yy < 0 || xx >= W || yy >= H) { atEdge = true; continue; }
+                    int n = yy * W + xx;
+                    if (seen[n]) continue;
+                    if (EyePixel(e, px, n)) { seen[n] = true; stack.Push(n); continue; }
+                    border++;
+                    int j = n * 4;
+                    if (e[j + 3] >= 120 && e[j + 2] - e[j] >= 60) fire++;   // warm and fairly solid: fire
+                }
+            }
+            if (atEdge || comp.Count > MaxEye || fire * 10 < border * 8) continue;
+            foreach (int k in comp) { int i = k * 4; e[i] = 110; e[i + 1] = 228; e[i + 2] = 255; e[i + 3] = 255; }   // BGR: bright yellow
+        }
+    }
+
+    static bool EyePixel(byte[] e, byte[] px, int k) {
+        int i = k * 4;
+        return e[i + 3] < 200 && Math.Min(px[i], Math.Min(px[i + 1], px[i + 2])) >= 140;   // see-through, pale in the video
+    }
+
+    // -HotCores, last: on the dark game background any pale pixel left in the fire (a cream core or
+    // rim, a beige crescent, a white streak) reads as a white patch. Pale warm pixels get the saturation
+    // of fire (70%, same hue and brightness: cream turns yellow, beige orange). Grey (the blur of a
+    // swinging staff against the white background, smoke, a glint) is un-blended from white as if over a
+    // near-black: see-through dark, gone on the dark background; other pale tints fade out. Over the
+    // figure itself (the first frame's pose) only clearly pale pixels change, so its skin, eyes and gold
+    // trim stay as they are (the conjurer has no grey parts of his own).
+    static void Dewhiten(byte[] e, int W, int H) {
+        for (int k = 0; k < W * H; k++) {
+            int i = k * 4;
+            if (e[i + 3] == 0) continue;
+            int b = e[i], g = e[i + 1], r = e[i + 2];
+            int mx = Math.Max(b, Math.Max(g, r)), mn = Math.Min(b, Math.Min(g, r));
+            bool onFigure = Mask != null && Mask[k];
+            if (mx - mn <= 15 && mn >= (onFigure ? 100 : 70)) {
+                double a = Math.Min(1.0, (255 - (r + g + b) / 3.0) / 230.0);
+                e[i] = 25; e[i + 1] = 25; e[i + 2] = 25;
+                e[i + 3] = (byte)(e[i + 3] * a);
+                continue;
+            }
+            int pale = onFigure ? 160 : 100;   // how light a pixel must be to count as pale
+            if (mn < pale) continue;
+            if (r - b >= 25) {
+                if (mx < 140 || (mx - mn) * 10 >= mx * 6) continue;   // already as saturated as fire
+                int mn2 = mx * 3 / 10;
+                double f = (double)(mx - mn2) / Math.Max(1, mx - mn);
+                e[i] = (byte)(mn2 + (b - mn) * f);
+                e[i + 1] = (byte)(mn2 + (g - mn) * f);
+                e[i + 2] = (byte)(mn2 + (r - mn) * f);
+            } else {
+                double w = Math.Min(1.0, (mn - pale) / 60.0);   // how white it is
+                e[i + 3] = (byte)(e[i + 3] * (1 - w));
+            }
         }
     }
 
@@ -424,8 +509,8 @@ public static class AvatarCut {
     // dirs: one folder of frame_*.png per clip. Writes outIdle (the first clip's first frame) unless
     // null, outSheets[i] for each clip unless null, and outDefeated (the last frame of clip
     // defeatIndex) unless null. All share one crop.
-    // The revive's glow can reach the clip's sides and top (a crystal held near the edge): fade it out
-    // there instead of cutting it off in a straight line.
+    // The revive's glow, and the conjurer's fire, can reach the clip's sides and top (a crystal held near
+    // the edge, a blast leaving the frame): fade it out there instead of cutting it off in a straight line.
     static void FadeEdges(byte[] e, int W, int H) {
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
             int d = Math.Min(y, Math.Min(x, W - 1 - x));
@@ -467,7 +552,7 @@ public static class AvatarCut {
                     byte[] cut = Cut(Read(b), W, H);
                     // -ColorToAlpha: the clip's first frame (the pose) marks where the figure is.
                     if (ColorToAlpha && frames.Count == 0 && Mask == null) { Mask = FigureMask(cut, W, H); cut = Cut(Read(b), W, H); }
-                    if (ReviveClip) FadeEdges(cut, W, H);
+                    if (ReviveClip || HotCores) FadeEdges(cut, W, H);   // the conjurer: fire runs off the frame
                     frames.Add(cut);
                 }
             casts.Add(frames);

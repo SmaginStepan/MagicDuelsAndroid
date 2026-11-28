@@ -90,11 +90,11 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 
 ## Menu and tutorial
 - The game opens on a start menu: your **essence** in the top right corner (a tap opens the shop),
-  **Continue** (shows your level and next opponent), and two by two **Leaderboard**, **Shop**, PvP duel
-  ("coming soon") and **Options** (language, sound, your name, your avatar, and **Restart game**, which
-  asks first and then goes back to level 1 with the tutorial; it keeps your essence, streak and unlocked
-  avatars). In a duel, the **Menu** button or Android Back returns to the menu (the duel pauses); Back
-  on the menu closes the app.
+  **Continue** (shows your level and next opponent) and **PvP duel** ("soon") as two big rows, and a
+  row of three: **Leaderboard**, **Shop** and **Options** (language, sound, your name, your avatar,
+  and **Restart game**, which asks first and then goes back to level 1 with the tutorial; it keeps your
+  essence, streak and unlocked avatars). In a duel, the **Menu** button or Android Back returns to the
+  menu (the duel pauses); Back on the menu closes the app.
 - The first time the app opens, it asks your name (once, if none is set; Options can change it).
 
 ## Essence, revives and the shop (`Economy.kt`)
