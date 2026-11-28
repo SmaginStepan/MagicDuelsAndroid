@@ -1,12 +1,12 @@
 ﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png …).
 #   Old use, one element:  anim-sheets.ps1 -Art <art dir> -Res <drawable dir> -Element water [-ProjectilesOnly]
-#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall|spikyglobe|spikyshot|glassglobe -Frames <dir> -Out <png or webp>
+#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall|spikyglobe|spikyshot|glassglobe|plushglobe -Frames <dir> -Out <png or webp>
 #   Glass orb in roots:     anim-sheets.ps1 -Kind glassglobe -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #   Freeze (shot → globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #     where (Cx, Cy) and D are the globe's centre and diameter in the video's end frame (video pixels).
 param([string]$Art, [string]$Res, [string]$Element = "fire", [switch]$ProjectilesOnly,
       [string]$Kind, [string]$Frames, [string]$Out, [double]$Cx, [double]$Cy, [double]$D, [string]$Track, [switch]$NoLock, [double]$HeadFrac = 0.45,
-      [double]$BallBack = 0.2, [double]$BallR = 0.2, [double]$HeadDensity = 0.3, [int]$KeyLo = 8)
+      [double]$BallBack = 0.2, [double]$BallR = 0.2, [double]$HeadDensity = 0.3, [int]$KeyLo = 8, [double]$Protect = 0)
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
 using System;
@@ -115,7 +115,7 @@ public static class AnimSheet {
     // pixels that differ from it by less than soft (fully clear under hard, a soft edge in between, the
     // colour un-blended from the background). Pixels within protR of (protCx, protCy) are never filled:
     // the orb's dark body, which can be as dark as the background in places.
-    static void FloodKey(byte[] px, int W, int H, int s, double hard, double soft, double protCx, double protCy, double protR) {
+    static void FloodKey(byte[] px, int W, int H, int s, double hard, double soft, double protCx, double protCy, double protR, double protRy = -1) {
         double br = 0, bgc = 0, bb = 0; int nb = 0;
         int patch = Math.Max(4, Math.Min(W, H) / 40);
         foreach (int[] c in new[] { new[] { 0, 0 }, new[] { W - patch, 0 }, new[] { 0, H - patch }, new[] { W - patch, H - patch } })
@@ -124,7 +124,9 @@ public static class AnimSheet {
             }
         bb /= nb; bgc /= nb; br /= nb;
         Func<int, double> dist = i => Math.Max(Math.Abs(px[i] - bb), Math.Max(Math.Abs(px[i + 1] - bgc), Math.Abs(px[i + 2] - br)));
-        Func<int, int, bool> prot = (x, y) => protR > 0 && (x - protCx) * (x - protCx) + (y - protCy) * (y - protCy) < protR * protR;
+        // The protected area is a circle, or an ellipse with radii protR (across) and protRy (up and down).
+        double ry = protRy > 0 ? protRy : protR;
+        Func<int, int, bool> prot = (x, y) => protR > 0 && (x - protCx) * (x - protCx) / (protR * protR) + (y - protCy) * (y - protCy) / (ry * ry) < 1;
         bool[] seen = new bool[W * H];
         var q = new System.Collections.Generic.Queue<int>();
         Action<int, int> push = (x, y) => {
@@ -205,6 +207,98 @@ public static class AnimSheet {
             using (Bitmap o = FromBytes(op, sheet.Width, sheet.Height)) o.Save(dst, ImageFormat.Png);
         }
         return String.Format("{0} frames, body c=({1:F0},{2:F0}) r={3:F0}, window r={4:F0}", files.Length, cx, cy, r, R);
+    }
+
+    // Clears the loose bits a key leaves (specks of glow under a creature): every piece of visible pixels
+    // (alpha over 40, joined side to side) smaller than minFrac of the biggest piece.
+    static void DropSpecks(byte[] px, int W, int H, int s, double minFrac) {
+        int[] label = new int[W * H];
+        var sizes = new System.Collections.Generic.List<int> { 0 };
+        var q = new System.Collections.Generic.Queue<int>();
+        for (int start = 0; start < W * H; start++) {
+            if (label[start] != 0 || px[(start / W) * s + (start % W) * 4 + 3] <= 40) continue;
+            int id = sizes.Count, n = 0;
+            label[start] = id; q.Enqueue(start);
+            while (q.Count > 0) {
+                int k = q.Dequeue(), x = k % W, y = k / W;
+                n++;
+                foreach (int nk in new[] { x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, y > 0 ? k - W : -1, y < H - 1 ? k + W : -1 }) {
+                    if (nk < 0 || label[nk] != 0 || px[(nk / W) * s + (nk % W) * 4 + 3] <= 40) continue;
+                    label[nk] = id; q.Enqueue(nk);
+                }
+            }
+            sizes.Add(n);
+        }
+        int biggest = sizes.Max();
+        for (int k = 0; k < W * H; k++)
+            if (label[k] != 0 && sizes[label[k]] < minFrac * biggest) px[(k / W) * s + (k % W) * 4 + 3] = 0;
+    }
+
+    // A bouncing plush creature (element packs: Plush Toys): bright fur on a dark background that glows a
+    // little around it. Every frame is flood-keyed from its edges (FloodKey, nothing protected: the
+    // creature squishes and moves, and its fur is far from the background's colour), then all frames are
+    // cut with one square window around everything they show, so the bounce stays in the frame.
+    // protect > 0: a creature with patches as dark as the background (earth's moss) gets its body
+    // protected in every frame. A first key finds it: its width from the columns at least a quarter as
+    // full as the fullest, and its bottom from the rows (its top is no use: leaves on its head are as wide
+    // as a quarter of it). The body is taken as an ellipse 0.9 times as tall as it is wide, resting on that
+    // bottom, and the real key stays out of protect × that ellipse.
+    public static string PlushGlobe(string dir, string dst, int size, double hard, double soft, double margin, double protect) {
+        string[] files = Frames(dir);
+        int n = Math.Min(files.Length, Cols * Rows), W = 0, H = 0;
+        byte[][] keyed = new byte[n][];
+        int ux0 = int.MaxValue, uy0 = int.MaxValue, ux1 = -1, uy1 = -1;
+        string firstProt = "";
+        for (int k = 0; k < n; k++)
+            using (Bitmap f = new Bitmap(files[k])) {
+                int s;
+                W = f.Width; H = f.Height;
+                byte[] px = Read(f, out s);
+                double pcx = 0, pcy = 0, prx = 0, pry = 0;
+                if (protect > 0) {
+                    byte[] probe = (byte[])px.Clone();
+                    FloodKey(probe, W, H, s, hard, soft, 0, 0, 0);
+                    int[] pc = new int[W], prw = new int[H];
+                    for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+                        if (probe[y * s + x * 4 + 3] > 128) { pc[x]++; prw[y]++; }
+                    int mc = pc.Max(), mr = prw.Max();
+                    int bx0 = 0; while (bx0 < W - 1 && pc[bx0] < mc / 4) bx0++;
+                    int bx1 = W - 1; while (bx1 > 0 && pc[bx1] < mc / 4) bx1--;
+                    int by1 = H - 1; while (by1 > 0 && prw[by1] < mr / 4) by1--;
+                    // A round shape's chord is a quarter as long as its widest at 0.968 of its radius out.
+                    double rx = (bx1 - bx0) / 2.0 / 0.968, ry = 0.9 * rx;
+                    pcx = (bx0 + bx1) / 2.0; pcy = by1 + 0.03 * ry - ry;
+                    prx = protect * rx; pry = protect * ry;
+                }
+                FloodKey(px, W, H, s, hard, soft, pcx, pcy, prx, pry);
+                DropSpecks(px, W, H, s, 0.01);
+                if (k == 0) firstProt = String.Format(" protected c=({0:F0},{1:F0}) r=({2:F0},{3:F0})", pcx, pcy, prx, pry);
+                // What the frame shows: the rows and columns with more than a few solid pixels (specks at
+                // the video's edge don't count).
+                int[] cols = new int[W], rows = new int[H];
+                for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+                    if (px[y * s + x * 4 + 3] > 128) { cols[x]++; rows[y]++; }
+                int need = Math.Max(3, H / 100);
+                for (int x = 0; x < W; x++) if (cols[x] >= need) { ux0 = Math.Min(ux0, x); ux1 = Math.Max(ux1, x); }
+                for (int y = 0; y < H; y++) if (rows[y] >= need) { uy0 = Math.Min(uy0, y); uy1 = Math.Max(uy1, y); }
+                keyed[k] = px;
+            }
+        // Clear the specks outside that, so they don't show at the window's edge.
+        int pad = 2;
+        for (int k = 0; k < n; k++)
+            for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+                if (x < ux0 - pad || x > ux1 + pad || y < uy0 - pad || y > uy1 + pad) keyed[k][(y * W + x) * 4 + 3] = 0;
+        double cx = (ux0 + ux1) / 2.0, cy = (uy0 + uy1) / 2.0;
+        double half = Math.Max(ux1 - ux0, uy1 - uy0) / 2.0 * margin;
+        Rectangle crop = new Rectangle((int)Math.Round(cx - half), (int)Math.Round(cy - half), (int)Math.Round(2 * half), (int)Math.Round(2 * half));
+        using (Bitmap sheet = new Bitmap(Cols * size, Rows * size, PixelFormat.Format32bppArgb)) {
+            using (Graphics g = Hq(sheet))
+                for (int k = 0; k < n; k++)
+                    using (Bitmap kb = FromBytes(keyed[k], W, H))
+                        DrawInto(g, kb, crop, new Rectangle((k % Cols) * size, (k / Cols) * size, size, size));
+            sheet.Save(dst, ImageFormat.Png);
+        }
+        return String.Format("{0} frames, everything shown in ({1},{2})-({3},{4}), window {5}", n, ux0, uy0, ux1, uy1, crop) + firstProt;
     }
 
     // A glass orb wrapped in roots and leaves (element packs: Living Grove). The orb, a circle measured by
@@ -615,6 +709,9 @@ if ($Kind) {
         "spikyshot"  { "spikyshot:  " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac, $true, $BallBack, $BallR) }
         # A glass orb wrapped in roots: -Cx -Cy -D are the orb's centre and diameter (video pixels, by eye).
         "glassglobe" { "glassglobe: " + [AnimSheet]::GlassGlobe($Frames, $Out, 128, $Cx, $Cy, $D / 2, 1.22, 10, 40) }
+        # A bouncing plush creature on a dark background (Plush Toys); -Protect 0.92 keeps a key out of
+        # its body where it is as dark as the background.
+        "plushglobe" { "plushglobe: " + [AnimSheet]::PlushGlobe($Frames, $Out, 128, 14, 48, 1.04, $Protect) }
         "globe"      { "globe:      " + [AnimSheet]::Globe($Frames, $Out, 128, 48) }
         # -KeyLo: the brightness below which the background is clear (raise it for a glowing background).
         "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, $KeyLo, 60, -not $NoLock, $HeadFrac) }

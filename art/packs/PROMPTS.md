@@ -12,7 +12,7 @@ classic resources' names with a prefix: `spiked_orb_<el>_anim`, `spiked_proj_<el
   crystal globe); the frost ring shows instead.
 - Packs are bought in the shop for essence (GAME_RULES.md).
 
-## Dark Spikes (`spiked_`, 25 essence, 2026-11-28)
+## Dark Spikes (`spiked_`, normal price, 2026-11-28)
 
 Fire first, three directions each for globes (GA obsidian with thorns, GB spiked iron shell, GC dark
 crystal with black spikes), walls (WA spiked obsidian bricks, WB spiked iron plates) and shots (PA
@@ -77,7 +77,7 @@ anim-sheets.ps1 -Kind spikyshot -Frames art\packs\anim\spiked_proj_fire -Out app
 The wall is cut by `cut-symbols.ps1 -Kind walls`, which turns `originals/<pack>_wall_*.png` into
 `<pack>_wall_block_1 …`. Lightning and shadow keep the classic look for now (they aren't in play yet).
 
-## Living Grove (`grove_`, 30 essence, 2026-11-28)
+## Living Grove (`grove_`, premium price, 2026-11-28)
 
 A "living" look: roots, vines and leaves. Fire first, three directions each, all with `--seed 2026`:
 - globes: GA glass orb wrapped in roots and vines, GB cracked wooden seed pod, GC closed flower bud;
@@ -174,3 +174,195 @@ anim-sheets.ps1 -Kind projectile -Frames art\packs\anim\grove_proj_fire -Out app
 ```
 
 The wall is cut by `cut-symbols.ps1 -Kind walls` (`originals/grove_wall_1.png` → `grove_wall_block_1`).
+
+## Plush Toys (`plush_`, premium price, 2026-11-28)
+
+Toys and childhood. Fire first, three directions each, all with `--seed 2026`:
+- globes: GA felt ball with a flame patch, GB round plush creature with button eyes, GC crocheted ball;
+- walls: WA wooden toy blocks, WB quilted patchwork cushions, WC chunky knitted wool;
+- shots: PA felt ball comet, PB plush toy rocket, PC plush shooting star.
+
+You chose GB1, WB1 and PB2, then W1, E1 and A2 for the creatures and w2, e2 and a2 for the rockets. The
+images were made in **Relax** mode, after the Standard plan's Fast hours ran out.
+
+Creature (`--ar 1:1 --s 150 --style raw --seed 2026 --no fire, flames, orange, hands, child, person,
+table, shelf, floor, ground, surface, reflection, text, letters, border, frame, multiple objects`; fire
+without the `fire, flames, orange`, air also `--no yellow`):
+
+```
+a single round cute plush creature like a soft stuffed toy ball made of fluffy {COLOURS} fabric, black button eyes and a small stitched smile, {TUFTS} on its head, {GLOW}, centered, it fills most of the frame, floating on pure black void, cute toy game item, soft cozy childhood, bold readable silhouette, polished 3D render, soft studio lighting
+```
+
+| | {COLOURS} | {TUFTS} | {GLOW} |
+|---|---|---|---|
+| fire | red and orange | felt flame tufts | warm orange glow |
+| water | blue and aqua | felt water drop tufts | soft aqua blue glow |
+| earth | green and moss green | a little felt leaf sprout and felt pebbles | soft emerald green glow |
+| air | pale white and light sky blue | fluffy felt cloud and wind swirl tufts | soft pale silver and icy cyan glow |
+
+Rocket (`--ar 2:1 --s 150 --style raw --seed 2026 --no fire, flames, orange, hands, child, person,
+wizard, text, letters, border, frame, floor, ground, diagonal`; the same colours and glows; trails:
+fire `felt flames and puffy cotton smoke`, water `splashing felt water drops, bubbles and puffy cotton
+spray`, earth `tumbling felt leaves, little felt pebbles and puffy green dust`, air `swirling felt wind
+ribbons and puffy cotton clouds`):
+
+```
+a cute plush toy rocket sewn from soft {COLOURS} fabric with stitched seams and a round porthole button, flying straight horizontally to the right, its nose to the right, with a long trail of {TRAIL} streaming behind it to the left, {GLOW}, side view, perfectly horizontal flight path, dynamic motion, floating on pure black void, cute toy game effect, soft cozy childhood, bold readable silhouette, polished 3D render
+```
+
+Wall (`--ar 1:1 --s 150 --style raw --seed 2026 --no text, letters, numbers, perspective, tilted,
+multiple tiles, background scene, room, hands, child, door, window`):
+
+```
+a single square section of a soft plush wall of quilted patchwork cushions in pastel colors, stitched seams and big sewn buttons, straight-on front view, flat, the square fills the whole frame edge to edge, cute toy match-3 game tile, soft cozy childhood, polished 3D render, on pure black background
+```
+
+| | Image (job / index) | Animation (job / variation) |
+|---|---|---|
+| Fire creature | be24eff9-6f30-4292-9ff3-5ccb35e08b52 / 0 | 1c6f3d65-da24-4430-aa4c-bca145aea21d / 2 |
+| Water creature | 97603ed2-3c98-4e39-b0d8-e83bae064002 / 0 | b420ec26-89bf-4337-be7b-b61353e5f34b / 1 |
+| Earth creature | 5e6944df-87de-4630-bd80-242bf0be4076 / 0 | 802edd0e-a686-41b6-8b40-3cf79e6425f6 / 1 |
+| Air creature | 493deefe-1877-471d-a360-091449dffd48 / 1 | d7f3cb90-7739-4bad-a261-3417cd08a4d6 / 2 |
+| Fire rocket | e1e23921-0aa7-41eb-96dd-0e4f4bc31452 / 1 | 0a134874-eb81-412c-8c41-f088e760bbd1 / 1 |
+| Water rocket | 61d7ce0e-7176-47a9-a1a3-fd41576e2456 / 1 | 0a6d8e0e-d5c5-4a1f-9d81-90abbdf6aead / 1 |
+| Earth rocket | af6879bb-3bc4-4fc2-b266-87a1d05c6a11 / 1 | 07fbb135-106e-4e1b-a9d7-aeec443681ef / 2 |
+| Air rocket | 841ab82a-8fe0-4464-8b4c-f53453ce6416 / 1 | c752c7a1-d359-4291-989e-d1d907ae45d9 / 1 |
+| Wall | a860ec13-2022-49ee-8955-95ef6d1eba23 / 0 (`../walls/originals/plush_wall_1.png`) | — |
+
+The animations were made with Animate manually, **Loop** and **Low** motion, as SD videos in Relax mode
+(Pro plan). Relax runs one video job at a time with at most three queued: jobs sent beyond that vanish
+without a message, so send them one by one and watch the "queued jobs" count. The motion prompts were:
+- creatures: `the round plush creature gently squishes and bounces in place like a soft toy, its fluffy
+  fur sways softly and its {felt flame tufts flicker | water drop tufts wobble | cloud swirl drifts}, it
+  stays in the same place and size in the frame, static camera, no camera movement, pure black
+  background`;
+- earth creature (a second job: in the first one the sprout melted and the moss came and went): `the
+  round plush creature gently squishes and bounces in place like a soft toy and its fluffy fur sways
+  softly, the little leaf sprout and the mossy patch with pebbles stay attached and unchanged on its
+  head, it keeps facing the camera, …`;
+- rockets: `the {exhaust / trail} {flickers / ripples / flutters}, the plush rocket stays level and fixed
+  in the same place and size in the frame, it does not rotate, turn or move across the frame, …`.
+
+Picks are the variations that keep facing the camera and keep their tufts. Rejected: fire 0 grew little
+legs, fire 3 lost its flames for a moment, the other water and air variations turned to show their
+backs, and earth rockets 1 and 3 rolled over.
+
+### Cutting
+
+- Creatures: `anim-sheets.ps1 -Kind plushglobe` flood-keys the dark background from the frame's edges
+  (the fur is far from its colour), then cuts every frame with one square window around everything the
+  loop shows, so the bounce stays inside. Loose bits (under 1% of the creature) and specks outside that
+  window are cleared. Earth needs
+  `-Protect 0.92`: its moss is as dark as the background, so the key would eat into it; its body (an
+  ellipse found in every frame from its width and its bottom) is kept out of the key.
+- Rockets: they fly level already, so the classic `-Kind projectile` brightness key cuts them as they are.
+
+```
+anim-sheets.ps1 -Kind plushglobe -Frames art\packs\anim\plush_orb_earth -Out app\src\main\res\drawable-nodpi\plush_orb_earth_anim.webp -Protect 0.92
+anim-sheets.ps1 -Kind projectile -Frames art\packs\anim\plush_proj_fire -Out app\src\main\res\drawable-nodpi\plush_proj_fire_anim.webp
+```
+
+The wall is cut by `cut-symbols.ps1 -Kind walls` (`originals/plush_wall_1.png` → `plush_wall_block_1`).
+
+## Game Stream (`stream_`, premium price, 2026-11-28)
+
+Gaming and streaming: controllers, likes, stars. Fire first, three directions each, all with `--seed 2026`:
+- globes: GA joystick ball top, GB round arcade push button, GC glossy reaction bubble with a heart;
+- walls: WA stacked controllers, WB backlit RGB keycaps, WC neon hex panels with stars and hearts;
+- shots: PA rating star, PB like-heart, PC pixel comet (it came out as a plain fireball).
+
+You chose GB2, WB2 and PB1, then W1 for water, and w3, e4 and a4 for the hearts. The first earth and air
+buttons were seen too much from the side; new ones, "seen straight from the front, perfectly frontal flat
+view looking directly at its face, a perfect circle" with `--no side view, tilted, perspective, angle`,
+gave G1 (earth) and A4 (air). (One earth set had a cannabis-like leaf; avoid those.)
+
+Button (`--ar 1:1 --s 150 --style raw --seed 2026 --no fire, flames, orange, hands, person, table, desk,
+floor, ground, surface, reflection, text, letters, logo, brand, border, frame, multiple objects`; fire
+without the `fire, flames, orange`, air also `--no yellow`):
+
+```
+a single big round glossy arcade push button seen from the front, a domed {COLOURS} button with a glowing {ICON} icon in it, a chrome ring around it, {GLOW}, centered, it fills most of the frame, floating on pure black void, gaming and streaming game item, glossy, bold readable silhouette, polished 3D render
+```
+
+Icons: flame, water droplet, leaf, wind swirl. Heart (`--ar 2:1 …`):
+
+```
+a glossy {HEART} 3D like heart icon flying straight horizontally to the right, with a long trail of {TRAIL} streaming behind it to the left, {GLOW}, side view, perfectly horizontal flight path, dynamic motion, floating on pure black void, gaming and streaming game effect, bold readable silhouette, polished 3D render
+```
+
+(fire: `a glossy red 3D like heart icon wrapped in flames … tiny hearts, thumbs-up sparkles and confetti`.)
+Wall: `a single square section of a wall made of glowing RGB mechanical keyboard keys in neat rows, purple
+and blue backlight between the keycaps, straight-on front view, flat, the square fills the whole frame
+edge to edge, gaming and streaming match-3 game tile, polished 3D render, on pure black background`.
+
+| | Image (job / index) | Animation (job / variation) |
+|---|---|---|
+| Fire button | b2dd7db3-749a-4930-b80d-adddec2dd78a / 1 | 40fa6249-b5e6-4ac6-bae4-69b2bf8e5772 / 0 |
+| Water button | 81fc2623-6ffc-4a3e-9983-41398b46c111 / 0 | c6a7a484-b4a5-4516-beb9-67685f86ea80 / 0 |
+| Earth button | ca1f0160-8093-4e23-8651-938016cff7bd / 0 | 8a1950f0-b1bb-4f2d-8902-d50dbf785bd7 / 1 |
+| Air button | e4649e97-4526-479a-aaa5-5ec5502d3814 / 3 | 481c028b-711c-452c-8a6b-dbf306a6c3fb / 1 |
+| Fire heart | 88920ce5-e456-4be0-8b60-a79c84e489f8 / 0 | 5e9d0956-5326-4b89-849f-6e022db51778 / 3 |
+| Water heart | a7ece9c6-86f3-4d03-ade4-6103d16807d3 / 2 | 20a39746-f915-496d-a24e-f9647216f6cf / 3 |
+| Earth heart | f8055fdb-24a8-4bf0-81fc-557461876591 / 3 | 6f0b3cf1-e077-49a7-8702-747f07234471 / 1 |
+| Air heart | 3496a7ea-59b2-421c-9159-74cf2a6e3626 / 3 | e4f46efe-c95f-4215-9a40-b96de7ae5d0d / 2 |
+| Wall | 2698d4a2-2bbd-43ec-90c8-04884aa5431c / 1 (`../walls/originals/stream_wall_1.png`) | — |
+
+Animations: Loop, Low motion; the buttons in Relax, the hearts in Fast. Prompts:
+- buttons: `the glowing {icon} icon inside the button pulses and shimmers softly, light glints sweep across
+  the glossy dome and the neon rim glows brighter and dimmer, the button stays perfectly still in the
+  same place and size, static camera, …` (fire 1–3 pressed the button in and lost the flame);
+- hearts: `the heart pulses gently like a heartbeat and the trail of {trail} flickers and streams, the
+  heart stays level and fixed in the same place and size in the frame, it does not rotate, …`.
+
+Cutting: buttons with `-Kind plushglobe -Protect 0.9` (dark glass inside the chrome ring would otherwise
+be keyed), hearts with `-Kind projectile` (fire `-HeadFrac 0.63`, air `-HeadFrac 0.52`: their glow counts
+as head, so at the default 0.45 their hearts came out smaller than the others); the wall with
+`cut-symbols.ps1 -Kind walls`.
+
+## Clockwork (`mech_`, normal price, 2026-11-28)
+
+Gears and mech, light themed: every prompt adds `, bright light color scheme of clean white enamel,
+polished silver and shiny brass` and `--no rust, dirt`. Fire first, three directions each, `--seed 2026`:
+- globes: GA clockwork orb with a flame window, GB white mech reactor core, GC sphere of gears;
+- walls: WA interlocking gears, WB white armor plates, WC riveted plate with a big gear;
+- shots: PA flaming cog, PB white mech missile, PC drill bit.
+
+You chose GB3, WA3 and PA4, then A2 for air and w1, e4 and a2 for the cogs. The first water and earth
+cores were turned too far; new ones, `seen straight from the front, the glowing … reactor lens exactly in
+the center of the sphere facing the camera, symmetrical` with `--no side view, rotated, turned, tilted,
+perspective, angle`, gave C2 (water) and B2 (earth).
+
+Core:
+
+```
+a single round mech reactor core sphere of white armor panels with fine panel lines and small bolts, a glowing {LENS} reactor lens in the center, bright light color scheme of clean white enamel, polished silver and shiny brass, {GLOW}, centered, it fills most of the frame, floating on pure black void, mechanical game item, bold readable silhouette, polished 3D render
+```
+
+Cog (`--ar 2:1`):
+
+```
+a spinning polished silver cog gear wrapped in {AURA} flying straight horizontally to the right, with a long trail of {TRAIL} and tiny flying gears streaming behind it to the left, bright light color scheme of clean white enamel, polished silver and shiny brass, {GLOW}, side view, perfectly horizontal flight path, dynamic motion, floating on pure black void, mechanical game effect, bold readable silhouette, polished 3D render
+```
+
+Wall: `a single square section of a wall made of large interlocking gears and cogs set flat side by side, …,
+straight-on front view, flat, the square fills the whole frame edge to edge, mechanical match-3 game tile,
+polished 3D render, on pure black background`.
+
+| | Image (job / index) | Animation (job / variation) |
+|---|---|---|
+| Fire core | f506ef37-ab53-4197-82dd-8184362e79f7 / 2 | 664b6b82-3440-4533-980f-f693fed60b05 / 1 |
+| Water core | 8a359db3-0fa3-456f-a3b0-87e49f949768 / 1 | 33d6f4a1-802c-468c-bee1-4af0f4d69e3f / 1 |
+| Earth core | eec39b82-db4b-4b18-ab1c-ee1381425de9 / 1 | 3a982ade-a056-4923-8c52-0b2337c096ea / 2 |
+| Air core | 33e396f3-45bd-45d3-a5fe-3af32417cf54 / 1 | 3b5c8eb8-17e1-4ecf-952f-3df1bae07f35 / 3 |
+| Fire cog | d8c5a0b7-c4a6-4ef3-867f-aad757ce79ba / 3 | f1434808-8834-4204-afdb-899f0b2cae16 / 0 |
+| Water cog | 1f45eda7-fcd0-4c3f-84f7-396091a8ece3 / 0 | 80c71f56-0b3c-4d59-a355-716d2d330103 / 1 |
+| Earth cog | 60b7684e-d969-4403-8f77-c22b09d1ea0f / 3 | 2419cc0d-1192-43da-98cc-980ce9cce34a / 1 |
+| Air cog | a1804136-467e-439f-857b-2ff17a8712bb / 1 | dffda622-5f1b-46d4-baed-1786167da3f9 / 0 |
+| Wall | 33fa8dbc-c2e5-48c7-9ae6-4755ab056d24 / 2 (`../walls/originals/mech_wall_1.png`) | — |
+
+Animations in Fast, Loop, Low motion: cores `the reactor lens glows and pulses softly with swirling {element}
+light inside it and small lights on the panels blink, the white armored sphere stays perfectly still …`
+(the rejected ones turned or opened their panels); cogs `the cog gear spins in place and the trail of
+{trail} streams and flickers, the cog stays level and fixed …` (the fire cog still travels about 180 px
+in its video; the head lock holds it). Cut with `-Kind plushglobe -Protect 0.9` (cores) and
+`-Kind projectile` (cogs); the wall with `cut-symbols.ps1 -Kind walls`.

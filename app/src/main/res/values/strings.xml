@@ -76,6 +76,9 @@
     <string name="pack_classic">Classic</string>
     <string name="pack_spiked">Dark Spikes</string>
     <string name="pack_grove">Living Grove</string>
+    <string name="pack_plush">Plush Toys</string>
+    <string name="pack_stream">Game Stream</string>
+    <string name="pack_mech">Clockwork</string>
     <string name="pack_more">More packs soon</string>
     <string name="unlock_title_fmt">Unlock %1$s?</string>
     <string name="unlock">Unlock</string>

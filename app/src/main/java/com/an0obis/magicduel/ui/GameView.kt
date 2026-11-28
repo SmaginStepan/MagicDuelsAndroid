@@ -164,7 +164,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** The element pack in use: the look of the globes, shots and walls (chosen in the shop). */
     private var pack = ElementPacks.byId(prefs.getString(KEY_PACK, null)).let { if (ownsPack(it)) it else ElementPacks.CLASSIC }
 
-    /** Essence (a revive costs it) and the daily gift's streak; saved with the rest. */
+    /** Essence (it unlocks avatars and element packs) and the daily gift's streak; saved with the rest. */
     private val economy = Economy(
         prefs.getInt(KEY_ESSENCE, Economy.START_ESSENCE),
         prefs.getLong(KEY_LAST_CLAIM_DAY, Economy.NEVER),
@@ -2252,8 +2252,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val packW = (w - 2 * pad - (SHOP_PACKS.size - 1) * gap) / SHOP_PACKS.size
         val packH = packW * 1.3f
         val skinsH = packW * 1.75f
-        val elH = packW * 1.45f
-        val h = 1.3f * u + 0.5f * u + packH + 0.55f * u + 0.5f * u + skinsH + 0.3f * u + 0.5f * u + elH + 0.35f * u + 0.8f * u + pad
+        // Element packs for sale: three in a row, or four smaller ones a row once there are more than three
+        // (in as many rows as they need).
+        val packCols = if (ElementPacks.paid.size > 3) 4 else 3
+        val epW = (w - 2 * pad - (packCols - 1) * gap) / packCols
+        val elH = epW * 1.45f
+        val packRows = max(1, (ElementPacks.paid.size + packCols - 1) / packCols)
+        val packsH = packRows * elH + (packRows - 1) * gap
+        val h = 1.3f * u + 0.5f * u + packH + 0.55f * u + 0.5f * u + skinsH + 0.3f * u + 0.5f * u + packsH + 0.35f * u + 0.8f * u + pad
         val card = drawCard(c, w, h, s(R.string.shop))
         val cx = card.centerX()
         drawAmount(c, "${(shownEssence + 0.5f).toInt()}", card.right - pad, card.top + 0.8f * u, 0.34f * u, Pal.TEXT, Paint.Align.RIGHT, glow = essencePulse)
@@ -2337,21 +2343,23 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             dialogButtons["skin_${a.id}"] = r
         }
         y += skinsH + 0.3f * u
-        // Element packs: the classic look and the paid ones, each with its four globes; the last card
-        // says more are coming. A tap uses a pack you own, or opens the unlock popup.
+        // Element packs for sale, each with its four globes (the classic look is chosen in Options); with
+        // room left in the row a last card says more are coming. A tap uses a pack you own, or opens the
+        // unlock popup.
         label(c, s(R.string.shop_packs), card.left + pad, y + 0.3f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
         y += 0.5f * u
-        val packs = ElementPacks.all
-        for (i in 0..packs.size) {
-            if (i >= 3) break
-            val x = card.left + pad + i * (packW + gap)
-            val r = RectF(x, y, x + packW, y + elH)
+        val packs = ElementPacks.paid
+        for (i in 0 until packRows * packCols) {
+            if (i > packs.size) break // one "more soon" card in the room left, nothing after it
+            val x = card.left + pad + (i % packCols) * (epW + gap)
+            val py = y + (i / packCols) * (elH + gap)
+            val r = RectF(x, py, x + epW, py + elH)
             val p = packs.getOrNull(i)
             if (p == null) {
-                drawSoonCard(c, r, s(R.string.pack_more))
+                drawSoonCard(c, r, s(R.string.pack_more), if (packCols > 3) 0.22f * u else 0.26f * u)
                 continue
             }
-            drawPackCard(c, p, r)
+            drawPackCard(c, p, r, if (packCols > 3) 0.2f * u else 0.24f * u)
             dialogButtons["epack_${p.id}"] = r
         }
         val by = card.bottom - pad - 0.8f * u

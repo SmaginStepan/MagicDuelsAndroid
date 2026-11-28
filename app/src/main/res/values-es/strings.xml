@@ -72,6 +72,9 @@
     <string name="pack_classic">Clásico</string>
     <string name="pack_spiked">Púas oscuras</string>
     <string name="pack_grove">Arboleda viva</string>
+    <string name="pack_plush">Peluches</string>
+    <string name="pack_stream">Stream</string>
+    <string name="pack_mech">Mecánica</string>
     <string name="pack_more">Pronto más packs</string>
     <string name="unlock_title_fmt">¿Desbloquear %1$s?</string>
     <string name="unlock">Desbloquear</string>

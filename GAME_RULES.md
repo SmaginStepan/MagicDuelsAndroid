@@ -101,7 +101,7 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 
 ## Essence, revives and the shop (`Economy.kt`)
 - **Essence** (the glowing crystal) is collected from the daily gift and the shop, and unlocks paid
-  avatars; revives are free. A new player starts with **3**.
+  avatars and element packs; revives are free. A new player starts with **3**.
 - **Daily gift**: the first time the app opens on a new day (the phone's date), a popup shows the
   7-day streak and today's gift: **1 essence** plus a **streak bonus** of 0, 1, 1, 2, 2, 3, 5 on days
   1 to 7 in a row (1, 2, 2, 3, 3, 4, 6 in all, 21 a week). **Collect** adds it and the menu's counter
@@ -116,7 +116,11 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   and don't change the leaderboard.
 - **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
   builds until Google Play billing is in), the **avatars** and the **element packs**.
-- **Avatars**: only the Archmage is free. The Sorceress costs **3** essence and the Conjurer **5**;
+- **Prices** come in two tiers (`Economy.PRICE_NORMAL`, `PRICE_PREMIUM`): **normal 10** essence and
+  **premium 35**.
+  Normal: the Sorceress, the Conjurer, Dark Spikes and Clockwork. Premium: Living Grove, Plush Toys and
+  Game Stream.
+- **Avatars**: only the Archmage is free. The Sorceress and the Conjurer cost **10** essence each;
   unlocked once, they are yours for good. In the shop and in "Choose your avatar" a locked one shows
   its price (dimmed in the picker); a tap opens the unlock popup (the figure, its price, your essence,
   Cancel and Unlock, or Shop instead when you are short). Unlocking puts the avatar on. An avatar you
@@ -127,13 +131,21 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   walls and the globes a duel starts with keep the classic look; the rules stay the same.
   - **Classic** is free.
   - **Dark Spikes** (spiked obsidian globes, spiked iron balls flying with each element's trail, spiked
-    obsidian walls) costs **25** essence.
+    obsidian walls) costs **10** essence (normal).
   - **Living Grove** (glass globes wrapped in living roots and vines, thorn spears of living wood
-    flying in each element's trail, walls of woven roots and moss) costs **30** essence.
+    flying in each element's trail, walls of woven roots and moss) costs **35** essence (premium).
+  - **Plush Toys** (round plush creatures with button eyes and felt tufts of their element, plush toy
+    rockets flying with each element's trail, walls of quilted patchwork cushions) costs **35** essence
+    (premium).
+  - **Game Stream** (glossy arcade buttons with a glowing element icon, burning like-hearts flying with
+    each element's trail, walls of backlit keyboard keys) costs **35** essence (premium).
+  - **Clockwork** (white armored reactor cores with a glowing element lens, spinning silver cogs flying
+    in each element's trail, walls of silver and gold gears) costs **10** essence (normal).
 
-  The shop shows the packs, three in a row, each with its four globes, and so does "Choose element
-  pack" (Options shows the pack in use; a tap opens the picker, two packs a row with a last "more packs
-  soon" card). Unlocking works as for avatars (the popup shows its globes, a wall and a shot; from the
+  The shop shows the paid packs, each with its four globes: three in a row, or four smaller ones a row
+  (in as many rows as they need) once there are more than three. "Choose element pack" shows
+  every pack, the classic look too (Options shows the pack in use; a tap opens the picker, two packs a
+  row with a last "more packs soon" card). Unlocking works as for avatars (the popup shows its globes, a wall and a shot; from the
   picker, closing it goes back there) and puts the pack to use at once, in the current duel too. A pack
   you own is used with a tap (in the picker that also goes back to Options). With a pack's globes your
   landed shot shows a frost ring instead of the classic freeze clip. Unlocked packs and the one in use

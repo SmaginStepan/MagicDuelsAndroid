@@ -65,6 +65,11 @@ class Economy(
 
     companion object {
         const val START_ESSENCE = 3
+
+        /** What essence unlocks (paid avatars, element packs) comes in two price tiers: normal and premium. */
+        const val PRICE_NORMAL = 10
+        const val PRICE_PREMIUM = 35
+
         const val DAILY_ESSENCE = 1
         const val STREAK_DAYS = 7
 

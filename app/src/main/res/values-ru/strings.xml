@@ -72,6 +72,9 @@
     <string name="pack_classic">Классика</string>
     <string name="pack_spiked">Тёмные шипы</string>
     <string name="pack_grove">Живая роща</string>
+    <string name="pack_plush">Игрушки</string>
+    <string name="pack_stream">Стрим</string>
+    <string name="pack_mech">Механика</string>
     <string name="pack_more">Скоро новые наборы</string>
     <string name="unlock_title_fmt">Открыть облик «%1$s»?</string>
     <string name="unlock">Открыть</string>

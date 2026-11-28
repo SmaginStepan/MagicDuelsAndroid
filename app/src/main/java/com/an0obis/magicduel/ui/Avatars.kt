@@ -1,6 +1,7 @@
 package com.an0obis.magicduel.ui
 
 import com.an0obis.magicduel.R
+import com.an0obis.magicduel.game.Economy
 
 /**
  * A player avatar: a Midjourney character (see art/avatars/PROMPTS.md) with an idle pose and three
@@ -52,7 +53,7 @@ object Avatars {
         // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); the frame has room for magic
         // over her head, so it's drawn taller.
         tipX = 0.238f, tipY = 0.223f, glow = 0xFFB98CFF.toInt(), scale = 1.16f,
-        reviveRes = R.drawable.avatar_sorceress_revive, price = 3,
+        reviveRes = R.drawable.avatar_sorceress_revive, price = Economy.PRICE_NORMAL,
     )
     val CONJURER = Avatar(
         "conjurer", R.string.avatar_conjurer, R.drawable.avatar_conjurer,
@@ -60,7 +61,7 @@ object Avatars {
         R.drawable.avatar_conjurer_defeat, R.drawable.avatar_conjurer_defeated,
         // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); room for magic over his head.
         tipX = 0.856f, tipY = 0.222f, glow = 0xFFFFB347.toInt(), scale = 1.09f,
-        reviveRes = R.drawable.avatar_conjurer_revive, price = 5,
+        reviveRes = R.drawable.avatar_conjurer_revive, price = Economy.PRICE_NORMAL,
     )
 
     /** Every avatar, the free one first (it is the default): the Archmage; then the paid ones. */
