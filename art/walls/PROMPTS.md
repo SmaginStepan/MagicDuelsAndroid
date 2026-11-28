@@ -49,5 +49,44 @@ edge, so only a faint glow line remains.
   corners; each crystal wall is a 192 px square tile with slightly rounded corners.
 - In the game: `res/drawable-nodpi/wall_button.webp` and `wall_block_1` … `wall_block_11.webp`
   (`Art.wallButton`, `Art.wallBlock`). A wall fills 94% of its cell. A new one grows in with a blue flash
-  from the bottom of the column up, a standing one shimmers gently, and a broken one shatters into four
-  spinning shards with a blue ring and the glass sound.
+  from the bottom of the column up, a standing one shimmers gently, and a broken one plays the shatter
+  clip below, with a blue ring and the glass sound.
+
+## Breaking: the shatter clip (2026-11-28)
+
+The crystal wall image (job 9d733a8d-0b6d-4943-a69d-a75b93cf3fff, image 1) animated with Midjourney's
+**Animate image → Animate manually**: **Loop off**, **End Frame** = black (`../hits/black_end.png`),
+**High** motion.
+
+Round 1, job a28f9470-79ae-40ee-91ba-e5533c8fc0c9:
+
+```
+the arcane crystal brick wall shatters: bright glowing cracks race across the blue-violet crystal bricks, then the whole wall bursts apart into sharp crystal shards and glittering blue sparks that fly outward from the center in all directions, spin and fade away into darkness, static camera, no camera movement, pure black background
+```
+
+Only variation 3 kept the wall flat and facing the camera; 0–2 swung it into 3D or pushed the camera in.
+
+Round 2, job 796162e8-dcc0-41e6-a40d-9b7b6a29093f:
+
+```
+the arcane crystal brick wall stays flat and facing the camera, it does not turn, tilt or move: glowing cracks spread across the blue-violet crystal bricks, then the wall explodes outward into many small crystal shards and glittering blue sparks that fly away from the center to all sides, spin and fade away into darkness, static camera, locked-off shot, no camera movement, no zoom, no rotation, pure black background
+```
+
+Variations 1 (an explosive burst toward the viewer) and 2 (a collapse from the top down) stayed
+front-facing; 0 zoomed in and 3 turned.
+
+You chose **A** = round 1, variation 3: the wall stays flat, shrinks a little and crumbles brick by brick
+into many small pieces flying out on all sides. Its alternatives were B = round 2/1 and C = round 2/2.
+
+16 frames from 0.8 s (the first cracks) to 4.2 s (the last pieces), in `anim/break/`, were made into
+`wall_break.webp` with `tools/art/anim-sheets.ps1 -Kind wall -Frames art/walls/anim/break -Out
+app/src/main/res/drawable-nodpi/wall_break.webp`: a brightness key (28–110), 16 frames of 256 px in a 4×4
+grid, and edges feathered 6% (square, not round, since the first frames are the square wall).
+
+In the game (`GameView.drawWalls`, `Art.wallBreak`):
+- the clip plays over 0.7 s (`WALL_BREAK_TIME`), neighbouring frames blended;
+- it starts at the wall's size and grows to 1.6× (`WALL_BREAK_GROW`) as the shards fly out past the cell,
+  fading over its last fifth;
+- the wall's own look (one of the 11) fades out over the first fifth, since the clip starts from the
+  base look;
+- the sheet is decoded in the background at the start of every duel with walls.

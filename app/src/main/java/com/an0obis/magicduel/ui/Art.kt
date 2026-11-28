@@ -338,6 +338,30 @@ class Art(private val res: Resources, private val packageName: String) {
     /** The square stone wall button, [size] pixels, with rounded transparent corners. */
     fun wallButton(size: Int): Bitmap = wallButtons.getOrPut(size) { Bitmap.createScaledBitmap(wallButtonSource, size, size, true) }
 
+    @Volatile
+    private var wallBreakAnim: Anim? = null
+    private val wallBreakLoading = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Starts decoding the wall-break sheet in the background (for duels with walls). */
+    fun prepareWallBreak() {
+        if (wallBreakAnim != null || !wallBreakLoading.compareAndSet(false, true)) return
+        Thread {
+            val opts = BitmapFactory.Options().apply {
+                inScaled = false
+                if (hardwareBitmaps) inPreferredConfig = Bitmap.Config.HARDWARE
+            }
+            val sheet = BitmapFactory.decodeResource(res, R.drawable.wall_break, opts) ?: decode(R.drawable.wall_break)
+            wallBreakAnim = Anim(sheet, FREEZE_COLS, FREEZE_ROWS)
+        }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    /**
+     * A crystal wall shattering (art/walls/PROMPTS.md): 16 square frames (4×4 sheet `wall_break`), the
+     * whole wall in the first frame and the last flying shards in the last. Null until decoded (it
+     * starts decoding if needed).
+     */
+    fun wallBreak(): Anim? = wallBreakAnim ?: run { prepareWallBreak(); null }
+
     /**
      * A conjured wall of arcane crystal bricks for one field cell, [size] pixels, with slightly rounded
      * corners. [look] (the wall's, see Board.wallLook) picks one of the variants.

@@ -1,6 +1,6 @@
 ﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png …).
 #   Old use, one element:  anim-sheets.ps1 -Art <art dir> -Res <drawable dir> -Element water [-ProjectilesOnly]
-#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit -Frames <dir> -Out <png or webp>
+#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall -Frames <dir> -Out <png or webp>
 #   Freeze (shot → globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #     where (Cx, Cy) and D are the globe's centre and diameter in the video's end frame (video pixels).
 param([string]$Art, [string]$Res, [string]$Element = "fire", [switch]$ProjectilesOnly,
@@ -355,6 +355,39 @@ public static class AnimSheet {
         }
         return String.Format("{0} frames, cell {1}x{1}", n, size);
     }
+
+    // Wall break: a one-shot square video of a crystal wall bursting into shards (art/walls/PROMPTS.md).
+    // Like a hit burst (brightness key, 16 frames in a 4×4 grid), but the first frames are the square wall
+    // itself, so the edges are only feathered thinly (6% of the cell) instead of fading to a circle.
+    public static string Wall(string dir, string dst, int size, int lo, int hi) {
+        string[] files = Frames(dir);
+        int n = Math.Min(files.Length, 16);
+        using (Bitmap sheet = new Bitmap(4 * size, 4 * size, PixelFormat.Format32bppArgb)) {
+            using (Graphics g = Hq(sheet))
+                for (int k = 0; k < n; k++)
+                    using (Bitmap b = new Bitmap(files[k])) {
+                        int s;
+                        byte[] px = Read(b, out s);
+                        Key(px, b.Width, b.Height, s, lo, hi);
+                        int side = Math.Min(b.Width, b.Height);
+                        using (Bitmap keyed = FromBytes(px, b.Width, b.Height))
+                            g.DrawImage(keyed, new Rectangle((k % 4) * size, (k / 4) * size, size, size),
+                                (b.Width - side) / 2, (b.Height - side) / 2, side, side, GraphicsUnit.Pixel);
+                    }
+            int st;
+            byte[] op = Read(sheet, out st);
+            double edge = size * 0.06;
+            for (int y = 0; y < sheet.Height; y++) for (int x = 0; x < sheet.Width; x++) {
+                int fx = x % size, fy = y % size;
+                double d = Math.Min(Math.Min(fx, size - 1 - fx), Math.Min(fy, size - 1 - fy)) + 0.5;
+                double a = Math.Min(1.0, d / edge);
+                a = a * a * (3 - 2 * a);
+                op[y * st + x * 4 + 3] = (byte)(op[y * st + x * 4 + 3] * a);
+            }
+            using (Bitmap o = FromBytes(op, sheet.Width, sheet.Height)) o.Save(dst, ImageFormat.Png);
+        }
+        return String.Format("{0} frames, cell {1}x{1}", n, size);
+    }
 }
 "@
 
@@ -364,6 +397,7 @@ if ($Kind) {
     if ($webp) { $Out = [IO.Path]::ChangeExtension($Out, ".png") }
     switch ($Kind) {
         "hit"        { "hit:        " + [AnimSheet]::Hit($Frames, $Out, 256, 28, 110) }
+        "wall"       { "wall:       " + [AnimSheet]::Wall($Frames, $Out, 256, 28, 110) }
         "globe"      { "globe:      " + [AnimSheet]::Globe($Frames, $Out, 128, 48) }
         "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac) }
         # Matches Art.FREEZE_GLOBE, FREEZE_ASPECT, FREEZE_COLS and FREEZE_ROWS in the game; the clip starts

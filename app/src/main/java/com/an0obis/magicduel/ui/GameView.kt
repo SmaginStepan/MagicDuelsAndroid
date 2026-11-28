@@ -19,7 +19,6 @@ import android.graphics.PointF
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RadialGradient
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -335,7 +334,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
     private val sky = Paint()
     private val rect = RectF()
-    private val srcRect = Rect()
     private val path = Path()
     private val stars = FloatArray(STAR_COUNT * 3)
 
@@ -484,6 +482,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun startBattle() {
         battle = Battle(Opponents.forLevel(level))
         art.preload(battle.elements)
+        if (battle.opponent.walls) art.prepareWallBreak()
         art.prepareAvatarCast(avatar, castAnim)
         prepareSprites()
         tutorial = when {
@@ -1501,24 +1500,24 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 c.drawRoundRect(rect, 0.06f * size, 0.06f * size, fill)
             }
         }
-        // A broken wall shatters: its four quarters fly apart, spinning, and fade.
+        // A broken wall shatters (a Midjourney clip, art/walls/PROMPTS.md): its crystal bricks crumble into
+        // shards that fly out past the cell, as the clip grows from the wall's size. The clip starts from
+        // one of the wall looks, so the wall's own look fades out over its first frames.
+        val clip = art.wallBreak()
         for (b in brokenWalls) {
-            val block = art.wallBlock(size, b.look)
-            val q = block.width / 2
             val k = b.t / WALL_BREAK_TIME
-            val fly = easeOut(k) * 0.45f * fu
-            bitmapPaint.alpha = (255 * (1f - k) * (1f - k)).toInt()
-            for (i in 0 until 4) {
-                val sx = if (i % 2 == 0) -1f else 1f
-                val sy = if (i < 2) -1f else 1f
-                val cx = b.x + sx * (size / 4f + fly)
-                val cy = b.y + sy * (size / 4f + fly) + k * k * 0.3f * fu
-                srcRect.set((i % 2) * q, (i / 2) * q, (i % 2 + 1) * q, (i / 2 + 1) * q)
-                c.save()
-                c.rotate(sx * sy * 40f * k, cx, cy)
-                rect.set(cx - size / 4f, cy - size / 4f, cx + size / 4f, cy + size / 4f)
-                c.drawBitmap(block, srcRect, rect, bitmapPaint)
-                c.restore()
+            if (clip != null) {
+                val half = size * (1f + WALL_BREAK_GROW * easeOut(k)) / 2f
+                rect.set(b.x - half, b.y - half, b.x + half, b.y + half)
+                bitmapPaint.alpha = (255 * (1f - smooth01((k - 0.8f) / 0.2f))).toInt()
+                drawClip(c, clip, k, rect, bitmapPaint)
+            }
+            // The wall itself (all of it while the clip is still decoding) fades out.
+            val wall = if (clip != null) 1f - smooth01(k / 0.2f) else 1f - k
+            if (wall > 0f) {
+                rect.set(b.x - size / 2f, b.y - size / 2f, b.x + size / 2f, b.y + size / 2f)
+                bitmapPaint.alpha = (255 * wall).toInt()
+                c.drawBitmap(art.wallBlock(size, b.look), null, rect, bitmapPaint)
             }
         }
         bitmapPaint.alpha = 255
@@ -3074,7 +3073,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         /** A new wall grows in over this long; each wall above the lowest one starts a little later. */
         const val WALL_RISE_TIME = 0.32f
         const val WALL_RISE_STAGGER = 0.07f
-        const val WALL_BREAK_TIME = 0.35f
+
+        /**
+         * A broken wall's shatter clip plays over this long, growing to (1 + this) times the wall's size
+         * as its shards fly out past the cell.
+         */
+        const val WALL_BREAK_TIME = 0.7f
+        const val WALL_BREAK_GROW = 0.6f
 
         /** A wall button fades to disabled (or back) over this long when its column's top cell fills (or frees up). */
         const val WALL_BUTTON_DISABLED_ALPHA = 110
