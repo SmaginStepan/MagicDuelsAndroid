@@ -221,7 +221,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     // ---- screens: the start menu (with small dialogs) and the duel ----
     private enum class Screen { MENU, BATTLE }
-    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS, AVATAR, DAILY, REVIVE, SHOP, UNLOCK }
+    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS, AVATAR, PACKS, DAILY, REVIVE, SHOP, UNLOCK }
     private var screen = Screen.MENU
     private var dialog: Dialog? = null
 
@@ -1100,6 +1100,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val p = ElementPacks.byId(hit.removePrefix("epack_"))
                     if (ownsPack(p)) choosePack(p) else offerUnlock(p, Dialog.SHOP)
                 }
+                // "Choose element pack" from Options: put on one you own (back to Options), or unlock it.
+                hit == "packs_open" -> openDialog(Dialog.PACKS)
+                hit != null && hit.startsWith("packpick_") -> {
+                    val p = ElementPacks.byId(hit.removePrefix("packpick_"))
+                    if (ownsPack(p)) {
+                        choosePack(p)
+                        closeDialog()
+                    } else {
+                        offerUnlock(p, Dialog.PACKS)
+                    }
+                }
                 hit == "unlock" -> unlockOffered()
                 hit == "unlock_cancel" -> closeDialog()
                 hit == "unlock_shop" -> openDialog(Dialog.SHOP)
@@ -1120,7 +1131,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 open == Dialog.SHOP || open == Dialog.UNLOCK -> if (!dialogCard.contains(x, y)) closeDialog()
                 open == Dialog.RESTART -> if (!dialogCard.contains(x, y)) openDialog(Dialog.OPTIONS)
                 open == Dialog.OPTIONS -> if (!dialogCard.contains(x, y)) dialog = null
-                open == Dialog.AVATAR -> if (!dialogCard.contains(x, y)) closeDialog()
+                open == Dialog.AVATAR || open == Dialog.PACKS -> if (!dialogCard.contains(x, y)) closeDialog()
                 open == Dialog.LEADERBOARD -> if (!dialogCard.contains(x, y)) closeDialog()
                 else -> dialog = null
             }
@@ -2335,49 +2346,67 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             if (i >= 3) break
             val x = card.left + pad + i * (packW + gap)
             val r = RectF(x, y, x + packW, y + elH)
-            fill.color = withAlpha(BLACK, 90)
-            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
             val p = packs.getOrNull(i)
             if (p == null) {
-                stroke.color = withAlpha(WHITE, 40)
-                stroke.strokeWidth = 0.03f * u
-                c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
-                val lines = wrap(s(R.string.pack_more), 0.26f * u, packW - 0.3f * u)
-                val ly = r.centerY() - (lines.size - 1) * 0.18f * u + 0.09f * u
-                lines.forEachIndexed { k, line -> label(c, line, r.centerX(), ly + k * 0.36f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.CENTER) }
+                drawSoonCard(c, r, s(R.string.pack_more))
                 continue
             }
-            val owned = ownsPack(p)
-            fill.shader = RadialGradient(r.centerX(), r.top + elH * 0.38f, packW * 0.62f, withAlpha(p.glow, 60), withAlpha(p.glow, 0), Shader.TileMode.CLAMP)
-            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
-            fill.shader = null
-            // Its four globes, two by two.
-            val gs = min((packW - 0.45f * u) / 2f, (elH - 1.05f * u) / 2f)
-            val gx0 = r.centerX() - gs - 0.04f * u
-            val gy0 = r.top + 0.12f * u
-            bitmapPaint.alpha = if (owned) 255 else 170
-            Element.active(Rules.START_ELEMENTS).take(4).forEachIndexed { k, e ->
-                val gx = gx0 + (k % 2) * (gs + 0.08f * u)
-                val gy = gy0 + (k / 2) * (gs + 0.08f * u)
-                art.packGlobe(p, e)?.draw(c, animFrame(e.ordinal * 5), RectF(gx, gy, gx + gs, gy + gs), bitmapPaint)
-            }
-            bitmapPaint.alpha = 255
-            label(c, s(p.nameRes), r.centerX(), r.bottom - 0.58f * u, 0.24f * u, Pal.TEXT, Paint.Align.CENTER)
-            val chosen = p.id == pack.id
-            when {
-                chosen -> label(c, s(R.string.avatar_chosen), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, GOLD, Paint.Align.CENTER)
-                owned -> label(c, s(R.string.avatar_owned), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
-                else -> drawAmount(c, "${p.price}", r.centerX(), r.bottom - 0.17f * u, 0.3f * u, GOLD, Paint.Align.CENTER)
-            }
-            stroke.color = if (chosen) GOLD else withAlpha(p.glow, 120)
-            stroke.strokeWidth = (if (chosen) 0.06f else 0.035f) * u
-            c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+            drawPackCard(c, p, r)
             dialogButtons["epack_${p.id}"] = r
         }
         val by = card.bottom - pad - 0.8f * u
         val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
         drawButton(c, close, s(R.string.close), null, primary = false, small = true)
         dialogButtons["close"] = close
+    }
+
+    /**
+     * Element pack [p] on card [r] (in the shop and in "Choose element pack"): its four globes two by
+     * two on its light, its name, and under it Chosen, Owned or its price. One you don't own is dimmed;
+     * the one in use is outlined in gold. [ts] is the text size; the rest scales with it.
+     */
+    private fun drawPackCard(c: Canvas, p: ElementPack, r: RectF, ts: Float = 0.24f * u) {
+        val k = ts / (0.24f * u)
+        fill.color = withAlpha(BLACK, 90)
+        c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+        fill.shader = RadialGradient(r.centerX(), r.top + r.height() * 0.38f, r.width() * 0.62f, withAlpha(p.glow, 60), withAlpha(p.glow, 0), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+        fill.shader = null
+        val owned = ownsPack(p)
+        // Its four globes, two by two, in the room above the text.
+        val room = r.height() - 1.05f * u * k
+        val gs = min((r.width() - 0.45f * u) / 2f, room / 2f)
+        val gx0 = r.centerX() - gs - 0.04f * u
+        val gy0 = r.top + max(0.12f * u, (room - 2 * gs - 0.08f * u) / 2f)
+        bitmapPaint.alpha = if (owned) 255 else 170
+        Element.active(Rules.START_ELEMENTS).take(4).forEachIndexed { i, e ->
+            val gx = gx0 + (i % 2) * (gs + 0.08f * u)
+            val gy = gy0 + (i / 2) * (gs + 0.08f * u)
+            art.packGlobe(p, e)?.draw(c, animFrame(e.ordinal * 5), RectF(gx, gy, gx + gs, gy + gs), bitmapPaint)
+        }
+        bitmapPaint.alpha = 255
+        label(c, s(p.nameRes), r.centerX(), r.bottom - 0.58f * u * k, ts, Pal.TEXT, Paint.Align.CENTER)
+        val chosen = p.id == pack.id
+        when {
+            chosen -> label(c, s(R.string.avatar_chosen), r.centerX(), r.bottom - 0.18f * u * k, ts, GOLD, Paint.Align.CENTER)
+            owned -> label(c, s(R.string.avatar_owned), r.centerX(), r.bottom - 0.18f * u * k, ts, Pal.TEXT_DIM, Paint.Align.CENTER)
+            else -> drawAmount(c, "${p.price}", r.centerX(), r.bottom - 0.17f * u * k, 0.3f * u * k, GOLD, Paint.Align.CENTER)
+        }
+        stroke.color = if (chosen) GOLD else withAlpha(p.glow, 120)
+        stroke.strokeWidth = (if (chosen) 0.06f else 0.035f) * u
+        c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+    }
+
+    /** An empty card [r] that says more are coming ([text], centred). */
+    private fun drawSoonCard(c: Canvas, r: RectF, text: String, ts: Float = 0.26f * u) {
+        fill.color = withAlpha(BLACK, 90)
+        c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+        stroke.color = withAlpha(WHITE, 40)
+        stroke.strokeWidth = 0.03f * u
+        c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+        val lines = wrap(text, ts, r.width() - 0.3f * u)
+        val ly = r.centerY() - (lines.size - 1) * 0.7f * ts + 0.35f * ts
+        lines.forEachIndexed { i, line -> label(c, line, r.centerX(), ly + i * 1.4f * ts, ts, Pal.TEXT_DIM, Paint.Align.CENTER) }
     }
 
     /**
@@ -2467,8 +2496,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Closes the open popup: the restart question and an avatar choice opened from Options go back to
-     * Options; closing the daily gift collects it.
+     * Closes the open popup: the restart question, the element pack choice and an avatar choice opened
+     * from Options go back to Options; closing the daily gift collects it.
      * The revive popup stays until you revive (Back steps out to the menu).
      */
     private fun closeDialog() {
@@ -2479,6 +2508,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialog = when {
             dialog == Dialog.RESTART -> Dialog.OPTIONS
             dialog == Dialog.AVATAR && avatarFromOptions -> Dialog.OPTIONS
+            dialog == Dialog.PACKS -> Dialog.OPTIONS
             dialog == Dialog.UNLOCK -> unlockFrom
             dialog == Dialog.REVIVE -> Dialog.REVIVE
             else -> null
@@ -2530,7 +2560,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val pad = 0.35f * u
         val rowH = 0.8f * u
         val avatarH = 3.6f * u
-        val h = 1.25f * u + 0.45f * u + rowH + 0.35f * u + 2 * (rowH + 0.3f * u) + avatarH + 0.3f * u + 0.25f * u + rowH + 0.35f * u + rowH + pad
+        val packH = 1.3f * u
+        val h = 1.25f * u + 0.45f * u + rowH + 0.35f * u + 2 * (rowH + 0.3f * u) + avatarH + 0.3f * u + packH + 0.3f * u + 0.25f * u + rowH + 0.35f * u + rowH + pad
         val cx = width / 2f
         val cy = height / 2f
         dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
@@ -2589,7 +2620,30 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.strokeWidth = 0.04f * u
         c.drawRoundRect(av, 0.25f * u, 0.25f * u, stroke)
         dialogButtons["avatar_open"] = av
-        y += avatarH + 0.3f * u + 0.25f * u
+        y += avatarH + 0.3f * u
+        // Your element pack: its four globes in a row and its name on a small card in its colour; a tap
+        // opens "Choose element pack".
+        label(c, s(R.string.element_pack), x0, y + packH / 2f + 0.1f * u, 0.3f * u, Pal.TEXT, Paint.Align.LEFT)
+        val pk = RectF(x1 - bw, y, x1, y + packH)
+        fill.color = withAlpha(BLACK, 90)
+        c.drawRoundRect(pk, 0.25f * u, 0.25f * u, fill)
+        fill.shader = RadialGradient(pk.centerX(), pk.top + packH * 0.35f, bw * 0.6f, withAlpha(pack.glow, 70), withAlpha(pack.glow, 0), Shader.TileMode.CLAMP)
+        c.drawRoundRect(pk, 0.25f * u, 0.25f * u, fill)
+        fill.shader = null
+        val elements = Element.active(Rules.START_ELEMENTS).take(4)
+        val gg = 0.06f * u
+        val gs = min((bw - 0.3f * u - gg * (elements.size - 1)) / elements.size, packH - 0.62f * u)
+        var gx = pk.centerX() - (gs * elements.size + gg * (elements.size - 1)) / 2f
+        for (e in elements) {
+            art.packGlobe(pack, e)?.draw(c, animFrame(e.ordinal * 5), RectF(gx, pk.top + 0.12f * u, gx + gs, pk.top + 0.12f * u + gs), bitmapPaint)
+            gx += gs + gg
+        }
+        label(c, s(pack.nameRes), pk.centerX(), pk.bottom - 0.2f * u, 0.27f * u, Pal.TEXT, Paint.Align.CENTER)
+        stroke.color = withAlpha(GOLD, 150)
+        stroke.strokeWidth = 0.04f * u
+        c.drawRoundRect(pk, 0.25f * u, 0.25f * u, stroke)
+        dialogButtons["packs_open"] = pk
+        y += packH + 0.3f * u + 0.25f * u
 
         val restart = RectF(x0, y, x1, y + rowH)
         drawButton(c, restart, s(R.string.restart_game), null, primary = false, small = true, danger = true)
@@ -2670,6 +2724,42 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             stroke.strokeWidth = (if (chosen) 0.07f else 0.03f) * u
             c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
             dialogButtons["avatar_${a.id}"] = r
+        }
+        val by = top + rows * cardH + (rows - 1) * gap + 0.35f * u
+        val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
+        drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+        dialogButtons["close"] = close
+    }
+
+    /**
+     * "Choose element pack" (from Options): a card per pack in a grid of two, as in the shop: its
+     * globes, name and Chosen, Owned or price. A last card says more are coming. A tap on one you own
+     * puts it on and goes back to Options; on a locked one it opens the unlock popup.
+     */
+    private fun drawPackPicker(c: Canvas) {
+        val w = min(width - 1.2f * u, 7.6f * u)
+        val pad = 0.35f * u
+        val gap = 0.3f * u
+        val cols = 2
+        val cardW = (w - 2 * pad - (cols - 1) * gap) / cols
+        val cardH = cardW * 1.2f
+        val slots = ElementPacks.all.size + 1 // + "more packs soon"
+        val rows = (slots + cols - 1) / cols
+        val h = 1.3f * u + rows * cardH + (rows - 1) * gap + 0.35f * u + 0.8f * u + pad
+        val card = drawCard(c, w, h, s(R.string.choose_pack))
+        val cx = card.centerX()
+        val top = card.top + 1.3f * u
+        for (i in 0 until slots) {
+            val x = card.left + pad + (i % cols) * (cardW + gap)
+            val y = top + (i / cols) * (cardH + gap)
+            val r = RectF(x, y, x + cardW, y + cardH)
+            val p = ElementPacks.all.getOrNull(i)
+            if (p == null) {
+                drawSoonCard(c, r, s(R.string.pack_more), 0.28f * u)
+                continue
+            }
+            drawPackCard(c, p, r, 0.3f * u)
+            dialogButtons["packpick_${p.id}"] = r
         }
         val by = top + rows * cardH + (rows - 1) * gap + 0.35f * u
         val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
@@ -2774,6 +2864,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (d == Dialog.AVATAR) {
             drawAvatarPicker(c)
+            return
+        }
+        if (d == Dialog.PACKS) {
+            drawPackPicker(c)
             return
         }
         if (d == Dialog.LEADERBOARD) {

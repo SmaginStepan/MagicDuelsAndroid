@@ -94,9 +94,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - The game opens on a start menu: your **essence** in the top right corner (a tap opens the shop),
   **Continue** (shows your level and next opponent) and **PvP duel** ("soon") as two big rows, and a
   row of three: **Leaderboard**, **Shop** and **Options** (language, sound, your name, your avatar,
-  and **Restart game**, which asks first and then goes back to level 1 with the tutorial; it keeps your
-  essence, streak and unlocked avatars). In a duel, the **Menu** button or Android Back returns to the
-  menu (the duel pauses); Back on the menu closes the app.
+  your element pack and **Restart game**, which asks first and then goes back to level 1 with the
+  tutorial; it keeps your essence, streak and unlocked avatars and packs). In a duel, the **Menu**
+  button or Android Back returns to the menu (the duel pauses); Back on the menu closes the app.
 - The first time the app opens, it asks your name (once, if none is set; Options can change it).
 
 ## Essence, revives and the shop (`Economy.kt`)
@@ -124,12 +124,20 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   chosen before avatars had prices goes back to the Archmage.
 - **Element packs** change how **your** magic looks (art/packs/PROMPTS.md): your flying shots, the
   globes they freeze into (also when pushed out of a row) and your walls. The bot's shots, globes and
-  walls and the globes a duel starts with keep the classic look; the rules stay the same. **Classic** is free; **Dark Spikes** (spiked obsidian globes, spiked iron
-  balls flying with each element's trail, spiked obsidian walls) costs **25** essence. The shop shows
-  each pack with its four globes; unlocking works as for avatars (the popup shows its globes, a wall and
-  a shot) and puts the pack to use at once, in the current duel too. A pack you own is used with a tap.
-  With a pack's globes your landed shot shows a frost ring instead of the classic freeze clip. Unlocked
-  packs and the one in use are saved, also through Restart game.
+  walls and the globes a duel starts with keep the classic look; the rules stay the same.
+  - **Classic** is free.
+  - **Dark Spikes** (spiked obsidian globes, spiked iron balls flying with each element's trail, spiked
+    obsidian walls) costs **25** essence.
+  - **Living Grove** (glass globes wrapped in living roots and vines, thorn spears of living wood
+    flying in each element's trail, walls of woven roots and moss) costs **30** essence.
+
+  The shop shows the packs, three in a row, each with its four globes, and so does "Choose element
+  pack" (Options shows the pack in use; a tap opens the picker, two packs a row with a last "more packs
+  soon" card). Unlocking works as for avatars (the popup shows its globes, a wall and a shot; from the
+  picker, closing it goes back there) and puts the pack to use at once, in the current duel too. A pack
+  you own is used with a tap (in the picker that also goes back to Options). With a pack's globes your
+  landed shot shows a frost ring instead of the classic freeze clip. Unlocked packs and the one in use
+  are saved, also through Restart game.
 
 ## Leaderboard
 - An online board of every player's **highest level** and name, on the ScoreServer service

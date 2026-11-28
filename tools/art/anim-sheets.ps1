@@ -1,11 +1,12 @@
 ﻿# Builds the game's animation sheets from Midjourney video frames (frame_00.png, frame_01.png …).
 #   Old use, one element:  anim-sheets.ps1 -Art <art dir> -Res <drawable dir> -Element water [-ProjectilesOnly]
-#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall|spikyglobe|spikyshot -Frames <dir> -Out <png or webp>
+#   Any frames → any sheet: anim-sheets.ps1 -Kind globe|projectile|hit|wall|spikyglobe|spikyshot|glassglobe -Frames <dir> -Out <png or webp>
+#   Glass orb in roots:     anim-sheets.ps1 -Kind glassglobe -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #   Freeze (shot → globe):  anim-sheets.ps1 -Kind freeze -Frames <dir> -Out <png> -Cx <x> -Cy <y> -D <d>
 #     where (Cx, Cy) and D are the globe's centre and diameter in the video's end frame (video pixels).
 param([string]$Art, [string]$Res, [string]$Element = "fire", [switch]$ProjectilesOnly,
       [string]$Kind, [string]$Frames, [string]$Out, [double]$Cx, [double]$Cy, [double]$D, [string]$Track, [switch]$NoLock, [double]$HeadFrac = 0.45,
-      [double]$BallBack = 0.2, [double]$BallR = 0.2)
+      [double]$BallBack = 0.2, [double]$BallR = 0.2, [double]$HeadDensity = 0.3, [int]$KeyLo = 8)
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
 using System;
@@ -206,12 +207,114 @@ public static class AnimSheet {
         return String.Format("{0} frames, body c=({1:F0},{2:F0}) r={3:F0}, window r={4:F0}", files.Length, cx, cy, r, R);
     }
 
-    // The projectile's head: its front edge (the right-most column that is at least 30% as dense as
-    // the densest column) and the vertical centre of the last headW columns behind that edge.
+    // A glass orb wrapped in roots and leaves (element packs: Living Grove). The orb, a circle measured by
+    // eye on the video (centre cx, cy and radius r, a little inside the glass so no background is kept),
+    // stays whole. Outside it the background is keyed away (RingKey), so the roots and leaves reaching
+    // out of the orb stay. The window is win × r, fading out at its round edge.
+    public static string GlassGlobe(string dir, string dst, int size, double cx, double cy, double r, double win, double hard, double soft) {
+        string[] files = Frames(dir);
+        int W, H;
+        using (Bitmap f0 = new Bitmap(files[0])) { W = f0.Width; H = f0.Height; }
+        double R = Math.Min(r * win, Math.Min(Math.Min(cx, W - cx), Math.Min(cy, H - cy)));
+        Rectangle crop = new Rectangle((int)(cx - R), (int)(cy - R), (int)(2 * R), (int)(2 * R));
+        using (Bitmap sheet = new Bitmap(Cols * size, Rows * size, PixelFormat.Format32bppArgb)) {
+            using (Graphics g = Hq(sheet))
+                for (int k = 0; k < files.Length && k < Cols * Rows; k++)
+                    using (Bitmap f = new Bitmap(files[k])) {
+                        int s;
+                        byte[] px = Read(f, out s);
+                        RingKey(px, W, H, s, cx, cy, r, hard, soft);
+                        using (Bitmap keyed = FromBytes(px, W, H))
+                            DrawInto(g, keyed, crop, new Rectangle((k % Cols) * size, (k / Cols) * size, size, size));
+                    }
+            int st;
+            byte[] op = Read(sheet, out st);
+            double c = size / 2.0, edge = size * 0.06;
+            for (int y = 0; y < sheet.Height; y++) for (int x = 0; x < sheet.Width; x++) {
+                double dx = (x % size) + 0.5 - c, dy = (y % size) + 0.5 - c;
+                double a = Math.Min(1.0, Math.Max(0.0, (c - Math.Sqrt(dx * dx + dy * dy)) / edge));
+                a = a * a * (3 - 2 * a);
+                op[y * st + x * 4 + 3] = (byte)(op[y * st + x * 4 + 3] * a);
+            }
+            using (Bitmap o = FromBytes(op, sheet.Width, sheet.Height)) o.Save(dst, ImageFormat.Png);
+        }
+        return String.Format("{0} frames, orb c=({1:F0},{2:F0}) r={3:F0}, window r={4:F0}", files.Length, cx, cy, r, R);
+    }
+
+    // Background key around a round orb (centre cx, cy, radius r) on a background that glows softly around
+    // it, which one colour can't match: the background's colour at each distance from the centre is the
+    // median of that ring (over 7 neighbouring rings, outside the orb; roots and leaves cover less than
+    // half of a ring). From the frame's edges the background is flood-filled through pixels that differ
+    // from their ring's colour by less than soft (clear under hard, a soft edge in between, the colour
+    // un-blended); holes enclosed by roots are cleared where they match it within hard. The orb is kept.
+    static void RingKey(byte[] px, int W, int H, int s, double cx, double cy, double r, double hard, double soft) {
+        int n = (int)Math.Ceiling(Math.Sqrt((double)W * W + (double)H * H)) + 2;
+        int[,] hist = new int[n, 768];
+        int[] cnt = new int[n];
+        int[] ringOf = new int[W * H];
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            double rho = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            int b = rho < r ? -1 : (int)rho;
+            ringOf[y * W + x] = b;
+            if (b < 0) continue;
+            int i = y * s + x * 4;
+            hist[b, px[i]]++; hist[b, 256 + px[i + 1]]++; hist[b, 512 + px[i + 2]]++; cnt[b]++;
+        }
+        double[,] bg = new double[n, 3];
+        for (int b = 0; b < n; b++) {
+            int lo = Math.Max(0, b - 3), hi = Math.Min(n - 1, b + 3), tot = 0;
+            for (int k = lo; k <= hi; k++) tot += cnt[k];
+            if (tot == 0) continue;
+            for (int c = 0; c < 3; c++) {
+                int acc = 0, v = 0;
+                for (; v < 256; v++) {
+                    for (int k = lo; k <= hi; k++) acc += hist[k, c * 256 + v];
+                    if (acc * 2 >= tot) break;
+                }
+                bg[b, c] = v;
+            }
+        }
+        Func<int, int, double> dist = (i, b) => Math.Max(Math.Abs(px[i] - bg[b, 0]), Math.Max(Math.Abs(px[i + 1] - bg[b, 1]), Math.Abs(px[i + 2] - bg[b, 2])));
+        bool[] seen = new bool[W * H];
+        var q = new System.Collections.Generic.Queue<int>();
+        Action<int, int> push = (x, y) => {
+            int k = y * W + x, b = ringOf[k];
+            if (seen[k] || b < 0 || dist(y * s + x * 4, b) >= soft) return;
+            seen[k] = true; q.Enqueue(k);
+        };
+        for (int x = 0; x < W; x++) { push(x, 0); push(x, H - 1); }
+        for (int y = 0; y < H; y++) { push(0, y); push(W - 1, y); }
+        while (q.Count > 0) {
+            int k = q.Dequeue(), x = k % W, y = k / W;
+            if (x > 0) push(x - 1, y);
+            if (x < W - 1) push(x + 1, y);
+            if (y > 0) push(x, y - 1);
+            if (y < H - 1) push(x, y + 1);
+        }
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            int i = y * s + x * 4, k = y * W + x, b = ringOf[k];
+            if (b < 0) { px[i + 3] = 255; continue; }
+            double d = dist(i, b);
+            if (!seen[k] && d >= hard) { px[i + 3] = 255; continue; }
+            double a = Math.Min(1.0, Math.Max(0.0, (d - hard) / (soft - hard)));
+            a = a * a * (3 - 2 * a);
+            if (a > 0) {
+                px[i] = (byte)Math.Max(0, Math.Min(255, bg[b, 0] + (px[i] - bg[b, 0]) / a));
+                px[i + 1] = (byte)Math.Max(0, Math.Min(255, bg[b, 1] + (px[i + 1] - bg[b, 1]) / a));
+                px[i + 2] = (byte)Math.Max(0, Math.Min(255, bg[b, 2] + (px[i + 2] - bg[b, 2]) / a));
+            }
+            px[i + 3] = (byte)(a * 255);
+        }
+    }
+
+    // The projectile's head: its front edge (the right-most column that is at least HeadDensity as dense
+    // as the densest column) and the vertical centre of the last headW columns behind that edge. A thin
+    // head behind a big trail (a spear in a wave) needs a low HeadDensity (-HeadDensity 0.06).
+    public static double HeadDensity = 0.3;
     static void Head(byte[] px, int W, int H, int s, int headW, out double front, out double centreY) {
         double[] col = new double[W];
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) col[x] += px[y * s + x * 4 + 3];
-        double max = col.Max(), t = 0.3 * max;
+        double max = col.Max(), t = HeadDensity * max;
         int f = W - 1;
         while (f > 0 && col[f] < t) f--;
         double sw = 0, sy = 0;
@@ -500,6 +603,7 @@ public static class AnimSheet {
 "@
 
 if ($Kind) {
+    [AnimSheet]::HeadDensity = $HeadDensity
     # -Out *.webp: the sheet is built as PNG, then converted with tools/art/to-webp.ps1 (lossy, alpha kept).
     $webp = $Out -like "*.webp"
     if ($webp) { $Out = [IO.Path]::ChangeExtension($Out, ".png") }
@@ -509,8 +613,11 @@ if ($Kind) {
         # Element packs (art/packs/PROMPTS.md): dark spiked subjects on a tinted dark background.
         "spikyglobe" { "spikyglobe: " + [AnimSheet]::SpikyGlobe($Frames, $Out, 128, 48) }
         "spikyshot"  { "spikyshot:  " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac, $true, $BallBack, $BallR) }
+        # A glass orb wrapped in roots: -Cx -Cy -D are the orb's centre and diameter (video pixels, by eye).
+        "glassglobe" { "glassglobe: " + [AnimSheet]::GlassGlobe($Frames, $Out, 128, $Cx, $Cy, $D / 2, 1.22, 10, 40) }
         "globe"      { "globe:      " + [AnimSheet]::Globe($Frames, $Out, 128, 48) }
-        "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, 8, 60, -not $NoLock, $HeadFrac) }
+        # -KeyLo: the brightness below which the background is clear (raise it for a glowing background).
+        "projectile" { "projectile: " + [AnimSheet]::Projectile($Frames, $Out, 128, $KeyLo, 60, -not $NoLock, $HeadFrac) }
         # Matches Art.FREEZE_GLOBE, FREEZE_ASPECT, FREEZE_COLS and FREEZE_ROWS in the game; the clip starts
         # at the flying comet's head size: GameView.SHOT_HEIGHT (1.35 cells) × HeadFrac over a 0.9-cell globe.
         # -Track "dx:size,dx:size,…" (16 frames, in globes): where the orb is, left of the final globe, and

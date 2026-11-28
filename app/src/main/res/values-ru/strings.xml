@@ -60,6 +60,8 @@
     <string name="tut_walls_break">Снаряд, долетевший до стены, разбивает её и останавливается. Шары, которые он толкает, упираются в стену, но если перед ней всё занято, толчок её разбивает. Взрыв рядом разбивает соседние стены.</string>
     <string name="avatar">Аватар</string>
     <string name="choose_avatar">Выберите аватар</string>
+    <string name="element_pack">Набор стихий</string>
+    <string name="choose_pack">Выберите набор стихий</string>
     <string name="avatar_mage">Архимаг</string>
     <string name="avatar_sorceress">Чародейка</string>
     <string name="avatar_conjurer">Заклинатель</string>
@@ -69,6 +71,7 @@
     <string name="shop_packs">Наборы стихий</string>
     <string name="pack_classic">Классика</string>
     <string name="pack_spiked">Тёмные шипы</string>
+    <string name="pack_grove">Живая роща</string>
     <string name="pack_more">Скоро новые наборы</string>
     <string name="unlock_title_fmt">Открыть облик «%1$s»?</string>
     <string name="unlock">Открыть</string>

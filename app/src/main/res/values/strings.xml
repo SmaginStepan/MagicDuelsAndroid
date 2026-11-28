@@ -64,6 +64,8 @@
     <string name="tut_walls_break">A shot that reaches a wall breaks it and stops there. Globes pushed against a wall stop too, but if the row in front of it is full, the push breaks the wall. An explosion breaks the walls next to it.</string>
     <string name="avatar">Avatar</string>
     <string name="choose_avatar">Choose your avatar</string>
+    <string name="element_pack">Element pack</string>
+    <string name="choose_pack">Choose element pack</string>
     <string name="avatar_mage">Archmage</string>
     <string name="avatar_sorceress">Sorceress</string>
     <string name="avatar_conjurer">Conjurer</string>
@@ -73,6 +75,7 @@
     <string name="shop_packs">Element packs</string>
     <string name="pack_classic">Classic</string>
     <string name="pack_spiked">Dark Spikes</string>
+    <string name="pack_grove">Living Grove</string>
     <string name="pack_more">More packs soon</string>
     <string name="unlock_title_fmt">Unlock %1$s?</string>
     <string name="unlock">Unlock</string>

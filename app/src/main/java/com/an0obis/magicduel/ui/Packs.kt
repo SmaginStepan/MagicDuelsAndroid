@@ -19,8 +19,14 @@ object ElementPacks {
     /** Dark spikes: spiked obsidian globes, spiked iron balls for shots, spiked obsidian walls. */
     val SPIKED = ElementPack("spiked", R.string.pack_spiked, "spiked_", 25, 0xFFB45CFF.toInt())
 
+    /**
+     * Living grove: glass orbs wrapped in roots and leaves, thorn spears of living wood for shots, walls
+     * of woven roots and moss.
+     */
+    val GROVE = ElementPack("grove", R.string.pack_grove, "grove_", 30, 0xFF6FD36A.toInt())
+
     /** Every pack, the classic look first (the default). */
-    val all = listOf(CLASSIC, SPIKED)
+    val all = listOf(CLASSIC, SPIKED, GROVE)
 
     fun byId(id: String?): ElementPack = all.firstOrNull { it.id == id } ?: CLASSIC
 }
