@@ -32,6 +32,7 @@ The packs themselves are not in the repository.
 | Main menu buttons (quiet) | `sfx_ui_menu.ogg` | click_002 | 0.3 |
 | Language / sound switch | `sfx_ui_toggle.ogg` | toggle_001 | 0.8 |
 | Cast cancelled | `sfx_ui_back.ogg` | back_001 | 0.8 |
+| A Refresh all completes | `sfx_refresh.ogg` | magical_2.ogg (your pick of 5) | 0.9 |
 | Victory / defeat | `sfx_win.ogg`, `sfx_lose.ogg` | confirmation_002, error_006 | 1 |
 
 Variants are picked at random and every sound plays at a slightly random pitch (±6%).

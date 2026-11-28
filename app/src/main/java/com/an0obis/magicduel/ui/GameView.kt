@@ -947,7 +947,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             BattleEvent.RefreshDone -> {
                 afterglow[Side.PLAYER.ordinal] = 1f
                 lastCastColor[Side.PLAYER.ordinal] = REFRESH_COLOR
-                sounds.play(Sounds.Fx.UI_TOGGLE, 0.7f)
+                sounds.play(Sounds.Fx.REFRESH, 0.9f)
             }
             is BattleEvent.PushedOut -> texts += FloatText(
                 s(R.string.pushed_out), cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
