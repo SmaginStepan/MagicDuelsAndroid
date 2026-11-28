@@ -485,7 +485,7 @@ class BattleTest {
         val board = Board.parse(".....", ".....", ".....", ".....", ".....")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)
         assertTrue(b.tryCastWall(1))
-        run(b, 0.5f)
+        run(b, Rules.CANCEL_DELAY + 0.1f)
         assertTrue(b.cancelCast())
         run(b, 3f)
         assertTrue(board.describe().none { '#' in it })
@@ -585,5 +585,71 @@ class BattleTest {
         assertTrue(events.contains(BattleEvent.WallCastStarted(Side.ENEMY, column)))
         assertTrue(events.any { it is BattleEvent.WallsRaised && it.side == Side.ENEMY && it.column == column && it.cells.size == 5 })
         assertTrue(board.describe().all { it[column] == '#' })
+    }
+
+    // ---------------------------------------------------------------- refresh all and cancelling
+
+    private fun grid(b: Battle) = (0 until b.spells.rows).map { r -> (0 until b.spells.cols).map { c -> b.spells[r, c] } }
+    private fun upcoming(b: Battle) = (0 until b.spells.rows).map { r -> (0 until b.spells.cols).map { c -> b.spells.upcoming(r, c) } }
+
+    @Test
+    fun aCastCanOnlyBeCancelledAfterASecond() {
+        val b = Battle(dummy, seed = 3, introTime = 0f)
+        assertTrue(b.tryCast(4, 0))
+        run(b, Rules.CANCEL_DELAY - 0.1f)
+        assertFalse(b.cancelCast())
+        assertTrue(b.player.isCasting)
+        run(b, 0.2f)
+        assertTrue(b.cancelCast())
+    }
+
+    @Test
+    fun refreshAllTakesTheQuickestSpellsTimeAndReplacesEverySpell() {
+        val b = Battle(dummy, seed = 5, introTime = 0f)
+        assertTrue(b.tryRefreshAll())
+        assertEquals(b.player.shortestCastTime, b.player.castTime, 1e-4f)
+        // Every spell dissolves and its replacement is already chosen; nothing can be cast meanwhile.
+        val plan = upcoming(b)
+        assertTrue(plan.flatten().all { it != null })
+        assertFalse(b.tryCast(0, 0))
+        assertFalse(b.tryRefreshAll())
+        run(b, b.player.shortestCastTime + 0.1f)
+        assertFalse(b.player.isCasting)
+        assertEquals(plan, grid(b))
+        val events = b.drainEvents()
+        assertEquals(15, events.filterIsInstance<BattleEvent.SpellsRefilled>().single().cells.size)
+        assertTrue(events.contains(BattleEvent.RefreshDone))
+        assertTrue(b.projectiles.isEmpty()) // nothing is fired
+    }
+
+    @Test
+    fun aCancelledRefreshBringsTheSameSpellsNextTimeAndRestsASecond() {
+        val b = Battle(dummy, seed = 7, introTime = 0f)
+        val before = grid(b)
+        assertTrue(b.tryRefreshAll())
+        val plan = upcoming(b)
+        run(b, Rules.CANCEL_DELAY + 0.1f)
+        assertTrue(b.cancelCast())
+        assertEquals(before, grid(b)) // the old spells are back
+        assertEquals(15, b.drainEvents().filterIsInstance<BattleEvent.RefreshCancelled>().single().cells.size)
+        // It rests for a moment, but other spells can be cast at once.
+        assertTrue(b.refreshResting)
+        assertFalse(b.tryRefreshAll())
+        run(b, Rules.REFRESH_REST + 0.05f)
+        assertTrue(b.canRefreshAll())
+        assertTrue(b.tryRefreshAll())
+        assertEquals(plan, upcoming(b))
+        run(b, b.player.shortestCastTime + 0.1f)
+        assertEquals(plan, grid(b))
+    }
+
+    @Test
+    fun refreshAllUnlocksWithTheWalls() {
+        val first = Battle(Opponents.forLevel(0), seed = 1, introTime = 0f)
+        assertFalse(first.refreshUnlocked)
+        assertFalse(first.tryRefreshAll())
+        val second = Battle(Opponents.forLevel(1), seed = 1, introTime = 0f)
+        assertTrue(second.refreshUnlocked)
+        assertTrue(second.tryRefreshAll())
     }
 }

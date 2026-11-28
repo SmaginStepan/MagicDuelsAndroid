@@ -35,6 +35,27 @@ class SpellGrid(private val random: Random, private val elements: List<Element>)
         return spells[row][col]
     }
 
+    /**
+     * The new spells a Refresh all brings, chosen the first time it is cast and kept until one
+     * completes: a cancelled refresh brings exactly the same ones when cast again.
+     */
+    private var refreshPlan: Array<Array<Element>>? = null
+
+    /** Refresh all: every spell dissolves, and its new spell comes from the refresh plan. */
+    fun takeAll() {
+        val plan = refreshPlan ?: Array(rows) { Array(cols) { elements.random(random) } }.also { refreshPlan = it }
+        for (r in 0 until rows) for (c in 0 until cols) {
+            refreshing[r][c] = true
+            next[r][c] = plan[r][c]
+        }
+    }
+
+    /** The Refresh all completed: every spell is replaced from the plan, and the plan is used up. */
+    fun finishRefreshAll(): List<Cell> {
+        refreshPlan = null
+        return refill()
+    }
+
     /** The cast was cancelled: the dissolved spells come back unchanged. Returns those cells. */
     fun restore(): List<Cell> {
         val restored = ArrayList<Cell>()

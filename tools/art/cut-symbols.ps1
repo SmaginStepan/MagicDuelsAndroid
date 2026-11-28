@@ -194,6 +194,32 @@ if ($Kind -eq 'walls') {
     [SymbolCutter]::Recolor("$dir\sprites\button.png", 232)
     Copy-Item "$dir\sprites\button.png" "$resDir\wall_button.png" -Force
     $pngs += "$resDir\wall_button.png"
+    # The Refresh all button (art/buttons/PROMPTS.md): a round stone disc, so it is cut as a circle (centre
+    # and rim radius measured by eye on the original), its edge fading out just past the rim's glow.
+    $buttons = (Resolve-Path (Join-Path $root 'art\buttons')).Path
+    $rcx = 513; $rcy = 519; $rim = 372; $out = 392; $size = 256
+    $srcImg = New-Object System.Drawing.Bitmap "$buttons\originals\refresh.png"
+    $disc = New-Object System.Drawing.Bitmap $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($disc)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $g.DrawImage($srcImg, (New-Object System.Drawing.Rectangle 0, 0, $size, $size), ($rcx - $out), ($rcy - $out), (2 * $out), (2 * $out), [System.Drawing.GraphicsUnit]::Pixel)
+    $g.Dispose(); $srcImg.Dispose()
+    $scale = $size / (2.0 * $out)
+    for ($y = 0; $y -lt $size; $y++) {
+        for ($x = 0; $x -lt $size; $x++) {
+            $r = [Math]::Sqrt([Math]::Pow($x + 0.5 - $size / 2, 2) + [Math]::Pow($y + 0.5 - $size / 2, 2)) / $scale
+            $a = [Math]::Min(1.0, [Math]::Max(0.0, ($out - $r) / ($out - $rim)))
+            $a = $a * $a * (3 - 2 * $a)
+            $p = $disc.GetPixel($x, $y)
+            $disc.SetPixel($x, $y, [System.Drawing.Color]::FromArgb([int]($p.A * $a), $p.R, $p.G, $p.B))
+        }
+    }
+    $disc.Save("$buttons\sprites\refresh.png", [System.Drawing.Imaging.ImageFormat]::Png)
+    $disc.Dispose()
+    "{0,-12} disc c=({1},{2}) rim={3} fade to {4}" -f 'refresh', $rcx, $rcy, $rim, $out
+    Copy-Item "$buttons\sprites\refresh.png" "$resDir\refresh_button.png" -Force
+    $pngs += "$resDir\refresh_button.png"
     $i = 1
     foreach ($f in Get-ChildItem "$dir\originals" -Filter 'crystal_*.png' | Sort-Object Name) {
         $sprite = "$dir\sprites\$($f.Name)"

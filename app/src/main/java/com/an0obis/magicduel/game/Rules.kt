@@ -26,6 +26,12 @@ object Rules {
      */
     const val PLAYER_CAST_SCALE = 0.8f
 
+    /** A cast of yours can be cancelled only this long (seconds) after it started; the Cancel button shows then. */
+    const val CANCEL_DELAY = 1f
+
+    /** After you cancel a Refresh all, it rests this long (seconds) before you can cast it again. */
+    const val REFRESH_REST = 1f
+
     /** Length of a bot's visible, repeating spell order. */
     const val BOT_SEQUENCE_LENGTH = 5
 

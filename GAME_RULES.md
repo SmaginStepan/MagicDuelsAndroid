@@ -27,9 +27,19 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   ring of magic glyphs that lights up as the cast progresses (three styles, taking turns; the bot's
   next spell gets one too), and is replaced the moment the cast completes. The other new spells are chosen at once and appear
   as small element symbols that grow during the cast; they become usable buttons when the cast completes.
-- While casting, a **Cancel cast** button appears above your mage. Cancelling fires nothing and brings the
-  dissolved spells back unchanged, so you can pick again straight away. The button disappears when the
-  cast is fired or cancelled.
+- While casting, a **Cancel cast** button appears above your mage, one second after the cast started
+  (`Rules.CANCEL_DELAY`: no cancelling on a reflex; a tap there before that does nothing). Cancelling fires
+  nothing and brings the dissolved spells back unchanged, so you can pick again straight away. The
+  button disappears when the cast is fired or cancelled. This goes for every cast: spells, walls and
+  Refresh all.
+- **Refresh all** (from level 2, with the wall buttons): a stone button in the wall buttons' style (two
+  pale silver arrows circling a dark void on a round disc, no title) between your HP bar (shorter from
+  level 2 to make room) and the level title. Tapping it starts a cast as long as your quickest spell
+  (lane 5, about 3.5 s) that takes your casting slot: all 15 spells dissolve and their replacements
+  grow in the grid as with a spell's row and column, and when it completes every spell is replaced (nothing is
+  fired). It can be cancelled like any cast; the replacements are chosen the first time, so a refresh
+  cast again after a cancel brings exactly the same new spells. After a cancel the button hides for one
+  second (`Rules.REFRESH_REST`). It is greyed while you cast something else.
 - The shot appears at the left edge of its lane and flies to the field at 6.75 layout units a second
   (`Rules.SHOT_SCREEN_SPEED`, 5.4 field cells a second), the same speed it then slides through its
   row. The flight is 0.625 units (half a field cell), about 0.09 s in every lane; sliding all the way
@@ -125,7 +135,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   its price (dimmed in the picker); a tap opens the unlock popup (the figure, its price, your essence,
   Cancel and Unlock, or Shop instead when you are short). Unlocking puts the avatar on. An avatar you
   own is put on with a tap (the shop marks it Owned, or Chosen when it is yours now). A paid avatar
-  chosen before avatars had prices goes back to the Archmage.
+  chosen before avatars had prices goes back to the Archmage. "Choose your avatar" opens from Options
+  or with a tap on your mage in a duel (the duel pauses); under the avatars its "Element pack" row (the
+  pack in use) opens "Choose element pack", and closing that comes back to the avatars.
 - **Element packs** change how **your** magic looks (art/packs/PROMPTS.md): your flying shots, the
   globes they freeze into (also when pushed out of a row) and your walls. The bot's shots, globes and
   walls and the globes a duel starts with keep the classic look; the rules stay the same.
@@ -166,7 +178,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Every hint has a **×** in its corner: tapping it closes that hint for the rest of the duel (the lesson
   goes on, and the next hint shows as usual).
 - Level 2 (oak dummy) unlocks walls and teaches them: a hint points at the wall buttons until you cast
-  walls, then one explains how walls break (shown for 9 s). It is shown once (until Restart game).
+  walls, then one explains how walls break (shown for 9 s), then a hint points at **Refresh all** until
+  a refresh completes. It is shown once (until Restart game). A player who learned walls before Refresh
+  all existed gets just the Refresh all hint in their next duel.
 
 ## Opponents (endless ladder, `Opponents.kt`)
 - Level 1 Target dummy (40 HP) and level 2 Oak dummy (80 HP) never fire back.

@@ -58,6 +58,7 @@
     <string name="tut_backfire">Esa fila estaba llena, así que tu hechizo rebotó y te golpeó. Apunta a filas con espacio.</string>
     <string name="tut_walls_tap">¡Novedad: muros! Toca un botón de muro sobre el campo. Tras un hechizo largo, el cristal mágico llena todas las casillas vacías de esa columna.</string>
     <string name="tut_walls_break">Un disparo que alcanza un muro lo rompe y se queda allí. Los globos empujados contra un muro también se detienen, pero si delante está todo lleno, el empujón lo rompe. Una explosión rompe los muros de al lado.</string>
+    <string name="tut_refresh">¿No te gustan tus hechizos? Pulsa Renovar todo: en lo que tarda tu hechizo más rápido, los 15 crecen de nuevo. Puedes cancelarlo tras un segundo; el siguiente intento trae los mismos hechizos nuevos.</string>
     <string name="avatar">Avatar</string>
     <string name="choose_avatar">Elige tu avatar</string>
     <string name="element_pack">Pack de elementos</string>

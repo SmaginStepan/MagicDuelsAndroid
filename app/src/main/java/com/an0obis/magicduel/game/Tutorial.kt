@@ -14,6 +14,9 @@ interface Lesson {
     /** True while the hint is about the wall buttons, so the screen can point at them. */
     val pointsAtWalls: Boolean get() = false
 
+    /** True while the hint is about the Refresh all button, so the screen can point at it. */
+    val pointsAtRefresh: Boolean get() = false
+
     /** True once everything has been taught. */
     val done: Boolean
 
@@ -23,28 +26,35 @@ interface Lesson {
 
 /**
  * The walls lesson, on level 2 (the first duel where walls can be cast): what the wall buttons do,
- * then, once the player has cast walls, how walls break.
+ * then, once the player has cast walls, how walls break; then Refresh all, which unlocks with them.
+ * With [walls] false it teaches only Refresh all (for a player who learned walls before it existed).
  */
-class WallTutorial : Lesson {
-    enum class Step { TAP_WALL, WATCH_WALL, HOW_THEY_BREAK, DONE }
+class WallTutorial(walls: Boolean = true) : Lesson {
+    enum class Step { TAP_WALL, WATCH_WALL, HOW_THEY_BREAK, TAP_REFRESH, WATCH_REFRESH, DONE }
 
-    var step = Step.TAP_WALL
+    var step = if (walls) Step.TAP_WALL else Step.TAP_REFRESH
         private set
     private var stepTime = 0f
+
+    /** True once the player has done a whole Refresh all during the lesson. */
+    var refreshTaught = false
+        private set
 
     override val hint: String?
         get() = when (step) {
             Step.TAP_WALL, Step.WATCH_WALL -> TAP_WALL
             Step.HOW_THEY_BREAK -> HOW_THEY_BREAK
+            Step.TAP_REFRESH, Step.WATCH_REFRESH -> TAP_REFRESH
             Step.DONE -> null
         }
 
     override val pointsAtWalls: Boolean get() = step == Step.TAP_WALL
+    override val pointsAtRefresh: Boolean get() = step == Step.TAP_REFRESH
     override val done: Boolean get() = step == Step.DONE
 
     override fun update(dt: Float) {
         stepTime += dt
-        if (step == Step.HOW_THEY_BREAK && stepTime >= HOW_THEY_BREAK_TIME) advance(Step.DONE)
+        if (step == Step.HOW_THEY_BREAK && stepTime >= HOW_THEY_BREAK_TIME) advance(Step.TAP_REFRESH)
     }
 
     override fun onEvent(e: BattleEvent) {
@@ -52,6 +62,12 @@ class WallTutorial : Lesson {
             is BattleEvent.WallCastStarted -> if (e.side == Side.PLAYER && step == Step.TAP_WALL) advance(Step.WATCH_WALL)
             is BattleEvent.WallCastCancelled -> if (e.side == Side.PLAYER && step == Step.WATCH_WALL) advance(Step.TAP_WALL)
             is BattleEvent.WallsRaised -> if (e.side == Side.PLAYER && step == Step.WATCH_WALL) advance(Step.HOW_THEY_BREAK)
+            BattleEvent.RefreshStarted -> if (step == Step.TAP_REFRESH) advance(Step.WATCH_REFRESH)
+            is BattleEvent.RefreshCancelled -> if (step == Step.WATCH_REFRESH) advance(Step.TAP_REFRESH)
+            BattleEvent.RefreshDone -> if (step == Step.TAP_REFRESH || step == Step.WATCH_REFRESH) {
+                refreshTaught = true
+                advance(Step.DONE)
+            }
             is BattleEvent.GameOver -> advance(Step.DONE)
             else -> Unit
         }
@@ -66,6 +82,7 @@ class WallTutorial : Lesson {
         const val HOW_THEY_BREAK_TIME = 9f
         const val TAP_WALL = "tut_walls_tap"
         const val HOW_THEY_BREAK = "tut_walls_break"
+        const val TAP_REFRESH = "tut_refresh"
     }
 }
 

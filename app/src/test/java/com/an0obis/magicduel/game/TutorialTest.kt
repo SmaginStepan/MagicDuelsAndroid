@@ -100,8 +100,31 @@ class TutorialTest {
         t.onEvent(BattleEvent.WallsRaised(Side.PLAYER, 3, listOf(Cell(0, 3))))
         assertEquals(WallTutorial.HOW_THEY_BREAK, t.hint)
         assertFalse(t.done)
+        // Then Refresh all, which unlocks with the walls.
         t.update(WallTutorial.HOW_THEY_BREAK_TIME + 0.1f)
+        assertEquals(WallTutorial.TAP_REFRESH, t.hint)
+        assertTrue(t.pointsAtRefresh)
+        t.onEvent(BattleEvent.RefreshStarted)
+        assertFalse(t.pointsAtRefresh)
+        t.onEvent(BattleEvent.RefreshCancelled(emptyList()))
+        assertTrue(t.pointsAtRefresh)
+        t.onEvent(BattleEvent.RefreshStarted)
+        assertFalse(t.done)
+        assertFalse(t.refreshTaught)
+        t.onEvent(BattleEvent.RefreshDone)
         assertTrue(t.done)
+        assertTrue(t.refreshTaught)
         assertNull(t.hint)
+    }
+
+    @Test
+    fun aPlayerWhoLearnedWallsGetsOnlyTheRefreshLesson() {
+        val t = WallTutorial(walls = false)
+        assertEquals(WallTutorial.TAP_REFRESH, t.hint)
+        assertFalse(t.pointsAtWalls)
+        // The duel ending first leaves Refresh all untaught (it comes back next duel).
+        t.onEvent(BattleEvent.GameOver(Side.PLAYER))
+        assertTrue(t.done)
+        assertFalse(t.refreshTaught)
     }
 }

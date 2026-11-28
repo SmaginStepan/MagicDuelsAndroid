@@ -417,6 +417,12 @@ class Art(private val res: Resources, private val packageName: String) {
     /** The square stone wall button, [size] pixels, with rounded transparent corners. */
     fun wallButton(size: Int): Bitmap = wallButtons.getOrPut(size) { Bitmap.createScaledBitmap(wallButtonSource, size, size, true) }
 
+    // The Refresh all button (art/buttons/PROMPTS.md), a tile like the wall button.
+    private val refreshButtonSource: Bitmap by lazy { decode(R.drawable.refresh_button) }
+    private val refreshButtons = HashMap<Int, Bitmap>()
+
+    fun refreshButton(size: Int): Bitmap = refreshButtons.getOrPut(size) { Bitmap.createScaledBitmap(refreshButtonSource, size, size, true) }
+
     @Volatile
     private var wallBreakAnim: Anim? = null
     private val wallBreakLoading = java.util.concurrent.atomic.AtomicBoolean(false)

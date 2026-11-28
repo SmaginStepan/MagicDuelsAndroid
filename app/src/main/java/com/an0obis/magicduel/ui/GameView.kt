@@ -42,6 +42,7 @@ import com.an0obis.magicduel.net.ScoreClient
 import com.an0obis.magicduel.game.Opponent
 import com.an0obis.magicduel.game.Opponents
 import com.an0obis.magicduel.game.Projectile
+import com.an0obis.magicduel.game.RefreshAll
 import com.an0obis.magicduel.game.Rules
 import com.an0obis.magicduel.game.Side
 import com.an0obis.magicduel.game.Spell
@@ -126,6 +127,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /** The walls lesson (level 2) has been seen. */
     private var wallTutorialDone = prefs.getBoolean(KEY_WALL_TUTORIAL_DONE, level > 1)
+
+    /** The Refresh all lesson has been seen (it came later than the walls one, so it has its own flag). */
+    private var refreshTutorialDone = prefs.getBoolean(KEY_REFRESH_TUTORIAL_DONE, false)
     private var played = prefs.getBoolean(KEY_PLAYED, level > 0)
     private var battle = Battle(Opponents.forLevel(level))
     private var tutorial: Lesson? = null
@@ -228,6 +232,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** The "Choose your avatar" popup was opened from Options (closing it goes back there). */
     private var avatarFromOptions = false
 
+    /** Where "Choose element pack" was opened from: Options or "Choose your avatar" (closing goes back). */
+    private var packsFrom = Dialog.OPTIONS
+
     /** The avatar in the unlock popup, and the popup it was opened from (closing goes back there). */
     private var unlocking: Avatar? = null
     private var unlockingPack: ElementPack? = null
@@ -249,6 +256,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /** "Cancel cast" button above your mage; only shown (and tappable) while you are casting. */
     private val cancelCastButton = RectF()
+
+    /** The Refresh all button (from level 2) and its fade (0 hidden, 1 shown). */
+    private val refreshButton = RectF()
+    private var refreshShow = 1f
 
     /** The × on the tutorial hint (empty while no hint is shown), and the hints closed with it this duel. */
     private val hintCloseButton = RectF()
@@ -432,16 +443,22 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         gridLeft = right - 0.3f * u - gridW
         playerTop = gridTop - 0.95f * u
 
+        // The opponent grows into the room a tall screen leaves between its row and the field (keeping a
+        // little gap), up to ENEMY_GROW_MAX: on a short screen it stays as it was. It moves left a bit as
+        // it grows, so its wider figure stays on screen.
+        val spare = playerTop - (enemyTop + 2.45f * u) - WALL_BAND * u - 5f * fu
+        val grow = ((spare - 0.35f * u) * 0.6f).coerceIn(0f, ENEMY_GROW_MAX * u)
+
         // The wall buttons sit in a band right above the field.
-        val enemyBottom = enemyTop + 2.45f * u
+        val enemyBottom = enemyTop + 2.45f * u + grow
         fieldTop = (enemyBottom + WALL_BAND * u + playerTop) / 2f - 2.5f * fu
 
         playerH = 3.7f * u
         playerX = left + (gridLeft - 0.7f * u - left) / 2f
         playerFoot = gridTop + gridH - 0.15f * u
-        enemyH = 2.15f * u
-        enemyX = right - 1.2f * u
-        enemyFoot = enemyTop + 2.35f * u
+        enemyH = 2.15f * u + grow
+        enemyX = right - 1.2f * u - 0.45f * grow
+        enemyFoot = enemyTop + 2.35f * u + grow
 
         dashed.pathEffect = DashPathEffect(floatArrayOf(0.12f * u, 0.14f * u), 0f)
         sky.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), Pal.SKY_TOP, Pal.SKY_BOTTOM, Shader.TileMode.CLAMP)
@@ -498,6 +515,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         tutorial = when {
             level == 0 && !tutorialDone -> Tutorial()
             level == 1 && !wallTutorialDone -> WallTutorial()
+            battle.refreshUnlocked && !refreshTutorialDone -> WallTutorial(walls = false)
             else -> null
         }
         resetEffects()
@@ -517,6 +535,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             .putInt(KEY_LEVEL, level)
             .putBoolean(KEY_TUTORIAL_DONE, tutorialDone)
             .putBoolean(KEY_WALL_TUTORIAL_DONE, wallTutorialDone)
+            .putBoolean(KEY_REFRESH_TUTORIAL_DONE, refreshTutorialDone)
             .putBoolean(KEY_PLAYED, played)
             .putString(KEY_LANGUAGE, language)
             .putBoolean(KEY_SOUND, soundOn)
@@ -675,6 +694,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         level = 0
         tutorialDone = false
         wallTutorialDone = false
+        refreshTutorialDone = false
         played = true
         save()
         startBattle()
@@ -710,9 +730,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         // Your collapse is only needed if you lose: decode it once you're down to half your HP.
         if (battle.player.hp * 2 <= battle.player.maxHp) art.prepareSheet(avatar.defeatRes)
         tutorial?.update(dt)
-        if (tutorial is WallTutorial && tutorial?.done == true && !wallTutorialDone) {
-            wallTutorialDone = true
-            save()
+        (tutorial as? WallTutorial)?.let { t ->
+            // The walls lesson is seen once it ends; the Refresh all part only once a refresh was done in it
+            // (if the duel ends first, the next duel teaches just Refresh all).
+            if (t.done && !wallTutorialDone) {
+                wallTutorialDone = true
+                save()
+            }
+            if (t.refreshTaught && !refreshTutorialDone) {
+                refreshTutorialDone = true
+                save()
+            }
         }
         queueShift = max(0f, queueShift - dt / QUEUE_SHIFT_TIME)
 
@@ -758,6 +786,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             wallButtonShow[col] += (target - wallButtonShow[col]).coerceIn(-dt / WALL_BUTTON_FADE, dt / WALL_BUTTON_FADE)
         }
         brokenWalls.removeAll { b -> b.t += dt; b.t >= WALL_BREAK_TIME }
+        // Refresh all shows once unlocked, and hides while it rests after a cancel.
+        val refreshTarget = if (battle.refreshUnlocked && !battle.refreshResting) 1f else 0f
+        refreshShow += (refreshTarget - refreshShow).coerceIn(-dt / REFRESH_FADE, dt / REFRESH_FADE)
         effects.update(dt)
         texts.removeAll { t -> t.t += dt; t.t >= t.duration }
         rings.removeAll { r -> r.t += dt; r.t >= r.duration }
@@ -899,6 +930,25 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             is BattleEvent.SpellsRefilled -> e.cells.forEach {
                 tilePop[it.row][it.col] = if (it.row == tappedRow && it.col == tappedCol) 1f else 0f
             }
+            // Refresh all: like a spell cast without a shot; every new spell grows in the grid meanwhile.
+            BattleEvent.RefreshStarted -> {
+                sounds.play(Sounds.Fx.CAST, MENU_CLICK_VOLUME)
+                castAnim = Random.nextInt(avatar.castRes.size)
+                art.prepareAvatarCast(avatar, castAnim)
+                ringStyle[Side.PLAYER.ordinal] = (ringStyle[Side.PLAYER.ordinal] + 1) % Art.CAST_RING_STYLES
+            }
+            is BattleEvent.RefreshCancelled -> {
+                sounds.play(Sounds.Fx.UI_BACK, 0.8f)
+                e.cells.forEach { tilePop[it.row][it.col] = 0f }
+                afterglow[Side.PLAYER.ordinal] = 0f
+                refreshShow = 0f // it rests (hidden) for a moment
+                if (!battle.playerDown) texts += FloatText(s(R.string.cancelled), cancelCastButton.centerX(), cancelCastButton.bottom + 0.1f * u, Pal.TEXT_DIM, 0.32f * u, 0.8f)
+            }
+            BattleEvent.RefreshDone -> {
+                afterglow[Side.PLAYER.ordinal] = 1f
+                lastCastColor[Side.PLAYER.ordinal] = REFRESH_COLOR
+                sounds.play(Sounds.Fx.UI_TOGGLE, 0.7f)
+            }
             is BattleEvent.PushedOut -> texts += FloatText(
                 s(R.string.pushed_out), cellX(if (e.by == Side.ENEMY) 0f else 4f), laneY(e.lane) - 0.55f * u, Pal.DAMAGE, 0.36f * u, 0.9f,
             )
@@ -1035,7 +1085,17 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             return true
         }
         if (battle.player.isCasting && RectF(cancelCastButton).apply { inset(-0.15f * u, -0.15f * u) }.contains(x, y)) {
+            // Before Rules.CANCEL_DELAY the button isn't there yet: the tap does nothing.
             if (battle.cancelCast()) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            return true
+        }
+        // Refresh all (from level 2): every spell is replaced after a short cast.
+        if (battle.refreshUnlocked && refreshShow > 0.5f && RectF(refreshButton).apply { inset(-0.12f * u, -0.12f * u) }.contains(x, y)) {
+            if (battle.tryRefreshAll()) {
+                tappedRow = -1
+                tappedCol = -1
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
             return true
         }
         // A tap on your mage opens "Choose your avatar" (the duel pauses meanwhile).
@@ -1100,8 +1160,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     val p = ElementPacks.byId(hit.removePrefix("epack_"))
                     if (ownsPack(p)) choosePack(p) else offerUnlock(p, Dialog.SHOP)
                 }
-                // "Choose element pack" from Options: put on one you own (back to Options), or unlock it.
-                hit == "packs_open" -> openDialog(Dialog.PACKS)
+                // "Choose element pack": put on one you own (back where it was opened), or unlock it.
+                hit == "packs_open" -> {
+                    packsFrom = open ?: Dialog.OPTIONS
+                    openDialog(Dialog.PACKS)
+                }
                 hit != null && hit.startsWith("packpick_") -> {
                     val p = ElementPacks.byId(hit.removePrefix("packpick_"))
                     if (ownsPack(p)) {
@@ -1201,6 +1264,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         drawPlayerPanel(c)
         drawPlayerAvatar(c)
         drawCancelCast(c)
+        drawRefreshButton(c)
         drawSpellGrid(c)
         drawBolts(c)
         drawSparks(c)
@@ -1583,6 +1647,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private fun castColor(caster: Caster): Int? = when {
         caster.castElement != null -> art.color(caster.castElement!!)
         caster.castWallColumn >= 0 -> WALL_COLOR
+        caster.castMove == RefreshAll -> REFRESH_COLOR
         else -> null
     }
 
@@ -1802,7 +1867,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     private fun drawPlayerPanel(c: Canvas) {
         val x = left + 0.35f * u
-        val w = gridLeft - 0.9f * u - x
+        // From level 2 the bar is shorter, to leave room for the Refresh all button on its right.
+        // From level 2 the bar ends before the Refresh all button, which sits by the level title.
+        placeRefreshButton()
+        val w = (if (battle.refreshUnlocked) refreshButton.left - 0.2f * u else gridLeft - 0.9f * u) - x
         // A long name shrinks so it never runs into the HP number.
         val name = displayName()
         text.textSize = 0.38f * u
@@ -1835,8 +1903,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * "Cancel cast" button above your mage's head. It exists only while a cast is in progress:
-     * it fades in when you tap a spell and is gone as soon as the cast is fired or cancelled.
+     * "Cancel cast" button above your mage's head. It exists only while a cast is in progress: it fades
+     * in once the cast has run for [Rules.CANCEL_DELAY] (no cancelling on a reflex) and is gone as soon
+     * as the cast is fired or cancelled.
      */
     private fun drawCancelCast(c: Canvas) {
         val p = battle.player
@@ -1844,8 +1913,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val h = 0.8f * u
         val top = playerTop + 1.15f * u
         cancelCastButton.set(playerX - w / 2f, top, playerX + w / 2f, top + h)
-        if (!p.isCasting || battle.winner != null) return
-        val a = min(1f, p.castProgress * p.castTime / CANCEL_FADE_IN)
+        if (!p.isCasting || battle.winner != null || p.castElapsed < Rules.CANCEL_DELAY) return
+        val a = min(1f, (p.castElapsed - Rules.CANCEL_DELAY) / CANCEL_FADE_IN)
         val r = h / 2f
         fill.color = withAlpha(Pal.CARD, (235 * a).toInt())
         c.drawRoundRect(cancelCastButton, r, r, fill)
@@ -1860,6 +1929,50 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         c.drawLine(cx - s, cy - s, cx + s, cy + s, stroke)
         c.drawLine(cx + s, cy - s, cx - s, cy + s, stroke)
         label(c, s(R.string.cancel_cast), cancelCastButton.left + 0.8f * u, cy + 0.12f * u, 0.34f * u, Pal.TEXT, Paint.Align.LEFT, a)
+    }
+
+    /**
+     * Where the Refresh all button goes: just left of the level title next to the Menu button (whatever
+     * the title's length), a little lower than it.
+     */
+    private fun placeRefreshButton() {
+        val k = MENU_SCALE
+        val menuLeft = right - 0.3f * u - 1.6f * u * k
+        text.textSize = 0.26f * u * k
+        val titleLeft = menuLeft - MENU_LABEL_GAP * u - text.measureText(s(R.string.level_fmt, level + 1))
+        val size = REFRESH_BUTTON * u
+        val cx = titleLeft - REFRESH_GAP * u - size / 2f
+        val cy = playerTop + 0.28f * u * k + REFRESH_DROP * u // a little below the title's line
+        refreshButton.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+    }
+
+    /**
+     * Refresh all (from level 2): a stone button like the wall buttons (art/buttons/PROMPTS.md), between
+     * your HP bar (shorter for it) and the level title. Usable when you aren't
+     * casting; greyed while you cast something else; while it is being cast its glyph ring fills (the new
+     * spells grow in the grid). After a cancel it hides for [Rules.REFRESH_REST].
+     */
+    private fun drawRefreshButton(c: Canvas) {
+        placeRefreshButton()
+        val size = refreshButton.width()
+        val bx = refreshButton.centerX()
+        val by = refreshButton.centerY()
+        if (!battle.refreshUnlocked) return
+        val a = smooth01(refreshShow)
+        if (a <= 0f) return
+        val p = battle.player
+        val casting = p.castMove == RefreshAll
+        val usable = casting || battle.canRefreshAll()
+        if (casting) art.drawCastRing(c, ringStyle[Side.PLAYER.ordinal], bx, by, size * 1.3f, REFRESH_COLOR, p.castProgress, clock)
+        val img = art.refreshButton(size.toInt().coerceAtLeast(8))
+        if (usable) {
+            bitmapPaint.alpha = (255 * a).toInt()
+            c.drawBitmap(img, null, refreshButton, bitmapPaint)
+            bitmapPaint.alpha = 255
+        } else {
+            greyPaint.alpha = (WALL_BUTTON_DISABLED_ALPHA * a).toInt()
+            c.drawBitmap(img, null, refreshButton, greyPaint)
+        }
     }
 
     // ================================================================ tutorial, menu and dialogs
@@ -1882,7 +1995,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The tutorial's current hint, in a card between the field and your panel, with a × in its corner
+     * The tutorial's current hint, in a card above the wall buttons (over the field), with a × in its corner
      * that closes it (the lesson carries on, and its next hint shows as usual).
      */
     private fun drawTutorial(c: Canvas) {
@@ -1900,6 +2013,13 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             stroke.strokeWidth = 0.06f * u
             c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
         }
+        if (t.pointsAtRefresh && refreshShow > 0.5f) {
+            stroke.color = withAlpha(GOLD, (90 + 140 * pulse).toInt())
+            stroke.strokeWidth = 0.06f * u
+            rect.set(refreshButton)
+            rect.inset(-0.12f * u, -0.12f * u)
+            c.drawOval(rect, stroke) // the button is a round disc
+        }
         if (t.pointsAtWalls) {
             val first = wallButtonRect(Rules.WALL_COLUMNS.first, RectF())
             val last = wallButtonRect(Rules.WALL_COLUMNS.last, RectF())
@@ -1914,7 +2034,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val x0 = left + 0.3f * u
         val x1 = right - 0.3f * u
         val lines = wrap(hint, size, x1 - x0 - 2 * pad - HINT_CLOSE * u)
-        val bottom = playerTop - 0.1f * u
+        // Above the wall buttons (over the field), clear of the board and of your panel.
+        val bottom = wallButtonRect(Rules.WALL_COLUMNS.first, RectF()).top - 0.15f * u
         val top = bottom - (lines.size * lineH + 2 * pad - 0.06f * u)
         rect.set(x0, top, x1, bottom)
         fill.color = withAlpha(Pal.CARD, 235)
@@ -2504,8 +2625,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Closes the open popup: the restart question, the element pack choice and an avatar choice opened
-     * from Options go back to Options; closing the daily gift collects it.
+     * Closes the open popup: the restart question and an avatar choice opened from Options go back to
+     * Options, the element pack choice to where it was opened (Options or the avatar choice); closing the
+     * daily gift collects it.
      * The revive popup stays until you revive (Back steps out to the menu).
      */
     private fun closeDialog() {
@@ -2516,7 +2638,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialog = when {
             dialog == Dialog.RESTART -> Dialog.OPTIONS
             dialog == Dialog.AVATAR && avatarFromOptions -> Dialog.OPTIONS
-            dialog == Dialog.PACKS -> Dialog.OPTIONS
+            dialog == Dialog.PACKS -> packsFrom
             dialog == Dialog.UNLOCK -> unlockFrom
             dialog == Dialog.REVIVE -> Dialog.REVIVE
             else -> null
@@ -2629,8 +2751,24 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         c.drawRoundRect(av, 0.25f * u, 0.25f * u, stroke)
         dialogButtons["avatar_open"] = av
         y += avatarH + 0.3f * u
-        // Your element pack: its four globes in a row and its name on a small card in its colour; a tap
-        // opens "Choose element pack".
+        drawPackRow(c, x0, x1, y, packH, bw)
+        y += packH + 0.3f * u + 0.25f * u
+
+        val restart = RectF(x0, y, x1, y + rowH)
+        drawButton(c, restart, s(R.string.restart_game), null, primary = false, small = true, danger = true)
+        dialogButtons["restart_open"] = restart
+        y += rowH + 0.35f * u
+        val close = RectF(cx - 1.4f * u, y, cx + 1.4f * u, y + rowH)
+        drawButton(c, close, s(R.string.close), null, primary = false, small = true)
+        dialogButtons["close"] = close
+    }
+
+    /**
+     * The "Element pack" row (in Options and in "Choose your avatar"): the label from [x0], and on the
+     * right, [bw] wide and [packH] tall, a small card in the pack's colour with the four globes of the
+     * pack you use and its name. A tap opens "Choose element pack".
+     */
+    private fun drawPackRow(c: Canvas, x0: Float, x1: Float, y: Float, packH: Float, bw: Float) {
         label(c, s(R.string.element_pack), x0, y + packH / 2f + 0.1f * u, 0.3f * u, Pal.TEXT, Paint.Align.LEFT)
         val pk = RectF(x1 - bw, y, x1, y + packH)
         fill.color = withAlpha(BLACK, 90)
@@ -2651,22 +2789,14 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.strokeWidth = 0.04f * u
         c.drawRoundRect(pk, 0.25f * u, 0.25f * u, stroke)
         dialogButtons["packs_open"] = pk
-        y += packH + 0.3f * u + 0.25f * u
-
-        val restart = RectF(x0, y, x1, y + rowH)
-        drawButton(c, restart, s(R.string.restart_game), null, primary = false, small = true, danger = true)
-        dialogButtons["restart_open"] = restart
-        y += rowH + 0.35f * u
-        val close = RectF(cx - 1.4f * u, y, cx + 1.4f * u, y + rowH)
-        drawButton(c, close, s(R.string.close), null, primary = false, small = true)
-        dialogButtons["close"] = close
     }
 
     /**
      * "Choose your avatar": a card per avatar in a grid of two, each with its idle pose and name: the
      * free one marked Free, the paid ones you haven't unlocked dimmed with their price. Yours is outlined
      * in gold. A last card says more avatars are coming. A tap on one you own picks it and closes the
-     * popup; on a locked one it opens the unlock popup.
+     * popup; on a locked one it opens the unlock popup. Under the grid, the "Element pack" row opens
+     * "Choose element pack" (closing that comes back here).
      */
     private fun drawAvatarPicker(c: Canvas) {
         val w = min(width - 1.2f * u, 7.6f * u)
@@ -2677,7 +2807,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val cardH = cardW * 1.45f
         val slots = Avatars.all.size + 1 // + "more avatars soon"
         val rows = (slots + cols - 1) / cols
-        val h = 1.3f * u + rows * cardH + (rows - 1) * gap + 0.35f * u + 0.8f * u + pad
+        val packH = 1.3f * u
+        val h = 1.3f * u + rows * cardH + (rows - 1) * gap + 0.35f * u + packH + 0.35f * u + 0.8f * u + pad
         val cx = width / 2f
         val cy = height / 2f
         dialogCard.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
@@ -2733,16 +2864,19 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
             dialogButtons["avatar_${a.id}"] = r
         }
-        val by = top + rows * cardH + (rows - 1) * gap + 0.35f * u
+        val py = top + rows * cardH + (rows - 1) * gap + 0.35f * u
+        drawPackRow(c, card.left + pad, card.right - pad, py, packH, cardW)
+        val by = py + packH + 0.35f * u
         val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
         drawButton(c, close, s(R.string.close), null, primary = false, small = true)
         dialogButtons["close"] = close
     }
 
     /**
-     * "Choose element pack" (from Options): a card per pack in a grid of two, as in the shop: its
-     * globes, name and Chosen, Owned or price. A last card says more are coming. A tap on one you own
-     * puts it on and goes back to Options; on a locked one it opens the unlock popup.
+     * "Choose element pack" (from Options or "Choose your avatar"): a card per pack in a grid of two, as
+     * in the shop: its globes, name and Chosen, Owned or price. A last card says more are coming. A tap on
+     * one you own puts it on and goes back where the picker came from; on a locked one it opens the
+     * unlock popup.
      */
     private fun drawPackPicker(c: Canvas) {
         val w = min(width - 1.2f * u, 7.6f * u)
@@ -3248,6 +3382,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_LEVEL = "level"
         const val KEY_TUTORIAL_DONE = "tutorialDone"
         const val KEY_WALL_TUTORIAL_DONE = "wallTutorialDone"
+        const val KEY_REFRESH_TUTORIAL_DONE = "refreshTutorialDone"
         const val KEY_PLAYED = "played"
         const val KEY_LANGUAGE = "language"
         const val KEY_SOUND = "sound"
@@ -3330,6 +3465,21 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
          * ring, the column glow, a wall's flash as it rises and the ring when it shatters.
          */
         val WALL_COLOR = 0xFF7F8CFF.toInt()
+
+        /** Refresh all's colour: its button ring and your afterglow. */
+        val REFRESH_COLOR = 0xFFFFE08A.toInt()
+
+        /** How long the Refresh all button takes to fade in or out (seconds). */
+        const val REFRESH_FADE = 0.2f
+
+        /** The Refresh all button's size, in layout units. */
+        const val REFRESH_BUTTON = 0.81f
+
+        /** How far (layout units) the Refresh all button sits below the level title's centre line. */
+        const val REFRESH_DROP = 0.1f
+
+        /** The gap (layout units) between the Refresh all button and the level title on its right. */
+        const val REFRESH_GAP = 0.3f
         const val QUEUE_SHIFT_TIME = 0.35f
         const val DIALOG_TAP_GUARD = 0.4f
         const val CANCEL_FADE_IN = 0.15f
@@ -3363,6 +3513,9 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** A bot sprite's height, as a multiple of [enemyH]. */
         const val ENEMY_AVATAR_SCALE = 1.05f
+
+        /** How much taller (in layout units) the opponent may grow on a tall screen (see layoutFor). */
+        const val ENEMY_GROW_MAX = 1.0f
 
         /** The longest a bot's cast animation plays, in seconds (its slow casts start with it standing still). */
         const val BOT_CAST_ANIM_MAX = 4f

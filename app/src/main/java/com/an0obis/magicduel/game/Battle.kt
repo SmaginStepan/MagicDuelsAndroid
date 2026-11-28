@@ -38,6 +38,12 @@ data class Spell(val shot: Shot) : Move {
 data class WallSpell(val column: Int) : Move
 
 /**
+ * Refresh all (the player's, from level 2): every spell of the grid is replaced. It takes as long as
+ * the caster's quickest spell ([Caster.shortestCastTime]).
+ */
+object RefreshAll : Move
+
+/**
  * A duellist: hit points plus the move currently being cast. Casting a spell into a lane takes
  * [Rules.castTime] of the caster's [baseCastTime] (longer for the top lanes); a wall takes
  * [Rules.wallCastTime], longer than any spell; both times [castScale] (the player's casts are
@@ -68,10 +74,14 @@ class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float, val castSc
     val isCasting: Boolean get() = castMove != null
     val castProgress: Float get() = if (isCasting) (castT / castTime).coerceIn(0f, 1f) else 0f
 
+    /** Seconds since the current cast started (0 when not casting). */
+    val castElapsed: Float get() = if (isCasting) castT else 0f
+
     /** How long casting [move] takes this caster. */
     fun castTimeOf(move: Move): Float = castScale * when (move) {
         is Spell -> Rules.castTime(baseCastTime, move.shot.lane)
         is WallSpell -> Rules.wallCastTime(baseCastTime)
+        RefreshAll -> Rules.shortestCastTime(baseCastTime)
     }
 
     /** This caster's quickest spell cast (into the bottom lane); avatars play their cast clips at this length. */
@@ -171,6 +181,18 @@ sealed interface BattleEvent {
         val chain: Int,
     ) : BattleEvent
     data class SpellsRefilled(val cells: List<Cell>) : BattleEvent
+
+    /** You started a Refresh all: every spell dissolves, and its replacement grows during the cast. */
+    object RefreshStarted : BattleEvent
+
+    /**
+     * You cancelled a Refresh all: the spells in [cells] came back unchanged (a new try brings the
+     * same replacements), and Refresh all rests for [Rules.REFRESH_REST].
+     */
+    data class RefreshCancelled(val cells: List<Cell>) : BattleEvent
+
+    /** Your Refresh all completed: every spell was replaced (a [SpellsRefilled] comes with it). */
+    object RefreshDone : BattleEvent
 
     /** A shot by [by] pushed through a full row; the globe at the far edge flies out at the other side. */
     data class PushedOut(val by: Side, val lane: Int) : BattleEvent
@@ -281,12 +303,19 @@ class Battle(
     }
 
     /**
-     * The player cancels the spell being cast: nothing is fired, and the spells that dissolved when it
-     * was tapped come back unchanged, so another spell can be cast right away.
-     * Returns false if there was nothing to cancel.
+     * The player cancels the move being cast: nothing is fired, and the spells that dissolved when it
+     * was tapped come back unchanged, so another spell can be cast right away. A cast can only be
+     * cancelled once it has run for [Rules.CANCEL_DELAY]; a cancelled Refresh all rests for
+     * [Rules.REFRESH_REST]. Returns false if there was nothing to cancel (yet).
      */
     fun cancelCast(): Boolean {
         if (winner != null) return false
+        if (player.isCasting && player.castElapsed < Rules.CANCEL_DELAY) return false
+        return callOffCast()
+    }
+
+    /** Calls off your cast at once (cancelled, or you went down). */
+    private fun callOffCast(): Boolean {
         when (val move = player.castMove) {
             is Spell -> {
                 player.cancelCast()
@@ -296,8 +325,41 @@ class Battle(
                 player.cancelCast()
                 events += BattleEvent.WallCastCancelled(Side.PLAYER, move.column)
             }
+            RefreshAll -> {
+                player.cancelCast()
+                refreshRestUntil = time + Rules.REFRESH_REST
+                events += BattleEvent.RefreshCancelled(spells.restore())
+            }
             null -> return false
         }
+        return true
+    }
+
+    /** Refresh all unlocks with the walls (from level 2). */
+    val refreshUnlocked: Boolean get() = opponent.walls
+
+    /** Until this battle [time], a cancelled Refresh all rests ([Rules.REFRESH_REST]). */
+    var refreshRestUntil = 0f
+        private set
+
+    /** True while Refresh all rests after being cancelled. */
+    val refreshResting: Boolean get() = time < refreshRestUntil
+
+    /** True if the player could start a Refresh all right now. */
+    fun canRefreshAll(): Boolean =
+        refreshUnlocked && started && winner == null && !playerDown && !player.isCasting && !refreshResting
+
+    /**
+     * The player taps Refresh all: every spell dissolves and its replacement grows during a cast as long
+     * as your quickest spell; when it completes, all of them are replaced. The replacements are chosen
+     * the first time, so a cancelled refresh brings exactly the same ones when cast again.
+     * Returns false if it can't be cast right now (see [canRefreshAll]).
+     */
+    fun tryRefreshAll(): Boolean {
+        if (!canRefreshAll()) return false
+        spells.takeAll()
+        player.startCast(RefreshAll)
+        events += BattleEvent.RefreshStarted
         return true
     }
 
@@ -338,6 +400,10 @@ class Battle(
                     pendingWalls.addLast(Side.PLAYER to move.column)
                     events += BattleEvent.WallCastDone(Side.PLAYER, move.column)
                 }
+                RefreshAll -> {
+                    events += BattleEvent.SpellsRefilled(spells.finishRefreshAll())
+                    events += BattleEvent.RefreshDone
+                }
                 null -> Unit
             }
             updateBot(dt)
@@ -376,6 +442,7 @@ class Battle(
                     pendingWalls.addLast(Side.ENEMY to move.column)
                     events += BattleEvent.WallCastDone(Side.ENEMY, move.column)
                 }
+                RefreshAll -> Unit // the bot never refreshes
             }
             plannedMoves.removeFirst()
             plannedMoves.addLast(randomMove())
@@ -401,6 +468,7 @@ class Battle(
                         enemy.startCast(move)
                         events += BattleEvent.WallCastStarted(Side.ENEMY, move.column)
                     }
+                    RefreshAll -> Unit
                 }
             }
         }
@@ -584,7 +652,7 @@ class Battle(
         if (side == Side.PLAYER) {
             // You are down, not out: the duel pauses until you revive (the screen starts the duel
             // over). Your cast is called off and every shot on its way vanishes.
-            cancelCast()
+            callOffCast()
             enemy.cancelCast()
             flying.forEach { it.state = Projectile.State.DONE }
             playerDown = true

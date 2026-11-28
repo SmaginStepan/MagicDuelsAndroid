@@ -62,6 +62,7 @@
     <string name="tut_backfire">That row was full, so your spell backfired and hit you. Aim at rows with space.</string>
     <string name="tut_walls_tap">New: walls! Tap a wall button above the field. After a long cast, magic glass fills every empty cell of that column.</string>
     <string name="tut_walls_break">A shot that reaches a wall breaks it and stops there. Globes pushed against a wall stop too, but if the row in front of it is full, the push breaks the wall. An explosion breaks the walls next to it.</string>
+    <string name="tut_refresh">Spells you don\'t want? Tap Refresh all: as long as your quickest spell takes, all 15 grow anew. You can cancel after a second; the next try brings the same new spells.</string>
     <string name="avatar">Avatar</string>
     <string name="choose_avatar">Choose your avatar</string>
     <string name="element_pack">Element pack</string>
