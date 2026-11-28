@@ -29,8 +29,15 @@ ethnicities' clothing.
 flat 2D fantasy game art of {CHARACTER with its CYBERNETIC PARTS}, holding {STAFF}, stern serious expression, dark and moody, full body, three-quarter view facing left, standing, centered, the whole figure fits in the frame with space around it, minimalist flat 2D fantasy game art, bold simple shapes, very little detail, limited dark muted palette with one glowing accent color, flat colors with hard-edged two-tone shading, no outlines, no texture, on a plain pure white background --ar 3:4 --s 150 --no 3d, render, realistic, photo, painterly, sketch, texture, intricate detail, gradient background, backdrop, floor, ground shadow, text, border, frame, multiple characters, cute, smile
 ```
 
+**From bot_03 on, the background is pure black, not white** (the user's choice: the videos are made
+on black). A Midjourney video starts from its image, so the image is on black too: the pattern ends
+`…, a soft cool rim light outlining the figure against the background, on a plain pure black
+background` and the `--no` list adds `white background`. The rim light keeps the dark robes from
+melting into the black, and `cut-avatar.ps1 -BlackBg` keys black instead of white.
+
 Animate (no Loop, Low motion), always with `mouth closed and silent the whole time, no talking, no lip
-movement` and `static camera, no camera movement, same plain white background`:
+movement` and `static camera, no camera movement, same plain black background` (white for bot_01 and
+bot_02):
 
 - **Cast:** `{who}, …, gathers {colour} magic …, then at the very end thrusts the staff forward to the left and launches a glowing {colour} magic bolt that flies off to the left out of the frame`
 - **Defeat:** `{who}, mouth closed, no talking, is struck by magic, staggers, {cybernetics} spark and smoke, drops the staff and collapses to the knees, ending slumped on the knees on the ground, defeated and exhausted`
@@ -41,6 +48,7 @@ movement` and `static camera, no camera movement, same plain white background`:
 |---|---|---|---|---|---|
 | bot_01 | 3 | **Novice Cogwin**: young apprentice, worn grey-brown robe, one clockwork brass forearm, teal temple implant, short staff with a teal crystal | b1e4c670-70b7-48b7-a57d-0d0aea01b962 (2) | 08df9a3c-ce8f-4fc0-b8e2-4030f8cca462 (3) | 0049724e-0ff6-49c2-9079-596cdf26d08c (2), last frame |
 | bot_02 | 4 | **Novice Rustjaw**: lean shaved-head apprentice warlock, rust-red hooded robe, brass jaw plate, amber eye lens, brass clockwork knee brace, crooked staff with an amber crystal | 02481782-93be-4002-b8ad-024d558f1ad0 (1) | **Google Flow**, Veo 3.1 Lite, project fcb5346a-9fc6-44dc-99bd-cb51edbe15bf, clip M2 (`ANqvLOZhsTpp…`): mirrored idle as Start and End, frames 0–4.3 s flipped back (was Midjourney fdcafb37-…, 2) | f4d2433e-ec4e-42e9-b631-1d398b0bfe0c (2), last frame |
+| bot_03 | 5 | **Ozrin**: gaunt grey-bearded hedge mage, patched violet robe, brass ear piece with glowing violet coils, small clockwork shoulder pauldron, gnarled copper-wired staff with a violet crystal. **First on black** | a6078ca9-1301-461a-9a90-9d3af7a98c15 (0) | f16ff197-138f-463d-8b12-115e87f09504 (0) | 2320a8af-37c7-452c-9645-5a394a8dd6c9 (1), last frame |
 
 Dummies: one defeated image for both, `dummy_defeated.webp`: the last frame of
 b9db9d36-02df-4b59-a7fc-67ab0431de2c (4) (`… is struck by a powerful magic blast, its wooden post snaps
@@ -66,7 +74,9 @@ The standard sequence for the next opponent (mage k, `bot_kk`), with the user ch
 4. **Cut.** Pull the frames (`anim/bot_kk/cast1/frame_00..47.png`; for the defeat only the last frame,
    `anim/bot_kk/defeat/frame_00.png`; not in git), then
    `tools/art/cut-avatar.ps1 -Art art\enemies -Prefix '' -Avatar bot_kk` writes `bot_kk.webp` (idle),
-   `bot_kk_cast1.webp` (8×6 sheet) and `bot_kk_defeated.webp`, all with one crop. If Midjourney drew a
+   `bot_kk_cast1.webp` (8×6 sheet) and `bot_kk_defeated.webp`, all with one crop. On black (from bot_03)
+   add `-BlackBg`: it keys black with tight edges and protects the figure's dark robe and shadows (a mask
+   of its visible parts, closed over small gaps, with what they enclose). If Midjourney drew a
    ground shadow anyway (bot_02), add `-Shadow`: it clears the pale, nearly colourless band under the
    feet. Check the result on a dark background for leftover white specks (`-PocketMin`).
 5. **Add it.** Add it to `EnemyAvatars.all` in `ui/Avatars.kt` with its crystal position (`tipX`,

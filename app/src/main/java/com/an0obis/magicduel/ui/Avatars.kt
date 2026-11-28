@@ -101,6 +101,8 @@ object EnemyAvatars {
         EnemyAvatar("bot_01", R.drawable.bot_01, R.drawable.bot_01_cast1, R.drawable.bot_01_defeated, 0.22f, 0.74f, 0xFF3FE0C8.toInt()),
         // Cast made with Google Flow (Veo 3.1 Lite); its frame has room for the fire ring above the head.
         EnemyAvatar("bot_02", R.drawable.bot_02, R.drawable.bot_02_cast1, R.drawable.bot_02_defeated, 0.21f, 0.37f, 0xFFFFA63C.toInt(), scale = 1.19f),
+        // Made on a black background (cut-avatar.ps1 -BlackBg).
+        EnemyAvatar("bot_03", R.drawable.bot_03, R.drawable.bot_03_cast1, R.drawable.bot_03_defeated, 0.75f, 0.12f, 0xFFA66BFF.toInt()),
     )
 
     /** The avatar of the k-th mage (0 = the first), or null if it has none yet. */

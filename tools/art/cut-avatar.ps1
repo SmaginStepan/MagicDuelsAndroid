@@ -15,6 +15,7 @@
 #   -FillCores (with -NoWhite) fills a white core enclosed by the spell with its colour instead of a hole (the mage)
 #   -ColorToAlpha un-blends pale magic outside the figure from white (white clear, pale blue a faint glow): the mage
 #   -HotCores (with -ColorToAlpha) also un-blends warm glow and fills white-hot cores of fire: the conjurer
+#   -BlackBg: the figure is on a plain black background (enemies from bot_03, art/enemies/PLAN.md)
 #   -ReviveGlow un-blends the revive clip's aura of any colour from white (colour-to-alpha for that clip
 #       only, the others are cut as before): the sorceress's violet aura
 #
@@ -25,7 +26,7 @@
 # the animations and the defeated image line up exactly.
 param([string]$Avatar, [string]$Art = 'art\avatars', [string]$Prefix = 'avatar_', [int]$Height = 300, [int]$Cols = 8,
       [switch]$DefeatSheet, [switch]$NoIdle, [double]$PocketSeed = 18, [int]$PocketMin = 12, [switch]$Shadow,
-      [double]$FigureMargin = 0, [switch]$NoWhite, [switch]$FillCores, [switch]$ColorToAlpha, [switch]$HotCores, [switch]$ReviveGlow)
+      [double]$FigureMargin = 0, [switch]$NoWhite, [switch]$FillCores, [switch]$ColorToAlpha, [switch]$HotCores, [switch]$ReviveGlow, [switch]$BlackBg)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -39,7 +40,10 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 public static class AvatarCut {
-    const double Hard = 32, Soft = 84;   // colour distance from the background: <= Hard gone, >= Soft solid
+    // Colour distance from the background: <= Hard gone, >= Soft solid. On a black background (-BlackBg)
+    // the dark robes lie close to it, so the edges are much tighter.
+    static double Hard = 32, Soft = 84;
+    static bool BlackBg = false;   // the figure is on black: protect its dark inside (see FigureInside)
     // Enclosed background pockets: patches seeded by pixels closer than PocketSeed to the background
     // colour, removed when at least PocketMin pixels (see Cut).
     static double PocketSeed = 18; static int PocketMin = 12;
@@ -72,6 +76,72 @@ public static class AvatarCut {
         return o;
     }
 
+    // -BlackBg: where the figure is, so the background fill stays out of its dark robe and shadows
+    // (as dark as the black around it). Its clearly visible parts (rim light, skin, brass, the crystal:
+    // further than SeenDist from the background) are joined over small gaps (closed by CloseR pixels),
+    // and everything they enclose is figure too, unless an enclosed patch is large and almost exactly
+    // the background colour (a real gap, between the staff and the robe, say).
+    const double SeenDist = 19, BareDist = 12;
+    const int CloseR = 10, BareMin = 400;
+
+    static bool[] Grow(bool[] m, int W, int H, int r, bool grow) {
+        // Square dilation (grow) or erosion of mask m by r pixels, as two 1-D passes.
+        bool[] t = new bool[W * H], o = new bool[W * H];
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            bool v = !grow;
+            for (int d = -r; d <= r; d++) {
+                int xx = x + d; bool s = xx >= 0 && xx < W ? m[y * W + xx] : !grow;
+                if (grow ? s : !s) { v = grow; break; }
+            }
+            t[y * W + x] = v;
+        }
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
+            bool v = !grow;
+            for (int d = -r; d <= r; d++) {
+                int yy = y + d; bool s = yy >= 0 && yy < H ? t[yy * W + x] : !grow;
+                if (grow ? s : !s) { v = grow; break; }
+            }
+            o[y * W + x] = v;
+        }
+        return o;
+    }
+
+    static bool[] FigureInside(double[] dist, int W, int H) {
+        bool[] seen = new bool[W * H];
+        for (int k = 0; k < W * H; k++) seen[k] = dist[k] >= SeenDist;
+        bool[] closed = Grow(Grow(seen, W, H, CloseR, true), W, H, CloseR, false);
+        // Outside: reached from the border without crossing the closed figure.
+        bool[] outside = new bool[W * H];
+        var q = new Queue<int>();
+        for (int x = 0; x < W; x++) { q.Enqueue(x); q.Enqueue((H - 1) * W + x); }
+        for (int y = 0; y < H; y++) { q.Enqueue(y * W); q.Enqueue(y * W + W - 1); }
+        while (q.Count > 0) {
+            int k = q.Dequeue();
+            if (outside[k] || closed[k]) continue;
+            outside[k] = true;
+            int x = k % W, y = k / W;
+            if (x > 0) q.Enqueue(k - 1); if (x < W - 1) q.Enqueue(k + 1);
+            if (y > 0) q.Enqueue(k - W); if (y < H - 1) q.Enqueue(k + W);
+        }
+        bool[] inside = new bool[W * H];
+        for (int k = 0; k < W * H; k++) inside[k] = !outside[k];
+        // Large enclosed patches of bare background (not the closed figure itself) open up again.
+        bool[] done = new bool[W * H];
+        var comp = new List<int>();
+        for (int s = 0; s < W * H; s++) {
+            if (done[s] || !inside[s] || closed[s] || dist[s] >= BareDist) continue;
+            comp.Clear(); q.Enqueue(s); done[s] = true;
+            while (q.Count > 0) {
+                int k = q.Dequeue(); comp.Add(k);
+                int x = k % W, y = k / W;
+                foreach (int n in new[] { x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, y > 0 ? k - W : -1, y < H - 1 ? k + W : -1 })
+                    if (n >= 0 && !done[n] && inside[n] && !closed[n] && dist[n] < BareDist) { done[n] = true; q.Enqueue(n); }
+            }
+            if (comp.Count >= BareMin) foreach (int k in comp) inside[k] = false;
+        }
+        return inside;
+    }
+
     static int[] Background(byte[] px, int W, int H) {
         var r = new List<int>(); var g = new List<int>(); var b = new List<int>();
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
@@ -91,12 +161,14 @@ public static class AvatarCut {
             dist[k] = Math.Sqrt(db * db + dg * dg + dr * dr);
         }
         bool[] reached = new bool[W * H];
+        // On black the figure's own shadows are as dark as the background: the fill must not get into it.
+        bool[] inside = BlackBg ? FigureInside(dist, W, H) : null;
         var q = new Queue<int>();
         for (int x = 0; x < W; x++) { q.Enqueue(x); q.Enqueue((H - 1) * W + x); }
         for (int y = 0; y < H; y++) { q.Enqueue(y * W); q.Enqueue(y * W + W - 1); }
         while (q.Count > 0) {
             int k = q.Dequeue();
-            if (reached[k] || dist[k] >= Soft) continue;
+            if (reached[k] || dist[k] >= Soft || (inside != null && inside[k])) continue;
             reached[k] = true;
             int x = k % W, y = k / W;
             if (x > 0) q.Enqueue(k - 1); if (x < W - 1) q.Enqueue(k + 1);
@@ -111,7 +183,7 @@ public static class AvatarCut {
         var comp = new List<int>();
         int[] glow = new int[W * H];   // 0, or 1 + the 0xRRGGBB tint of a pocket inside magic
         for (int s = 0; s < W * H; s++) {
-            if (reached[s] || seen[s] || dist[s] >= PocketSeed) continue;
+            if (reached[s] || seen[s] || dist[s] >= PocketSeed || PocketSeed <= 0) continue;
             comp.Clear();
             q.Enqueue(s); seen[s] = true;
             while (q.Count > 0) {
@@ -523,7 +595,8 @@ public static class AvatarCut {
     // reviveIndex: the clip that rises from the defeated pose to the idle one (or -1). It takes no part
     // in the crop (its ends are the defeated and idle poses, already framed), and with ColorToAlpha its
     // figure mask covers both ends, the kneeling and the standing figure.
-    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int reviveIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin, bool noWhite, bool fillCores, bool colorToAlpha, bool hotCores, bool reviveGlow) {
+    public static string Run(string[] dirs, string outIdle, string[] outSheets, string outDefeated, int defeatIndex, int reviveIndex, int height, int cols, double pocketSeed, int pocketMin, bool shadow, double figureMargin, bool noWhite, bool fillCores, bool colorToAlpha, bool hotCores, bool reviveGlow, double hard, double soft) {
+        Hard = hard; Soft = soft; BlackBg = hard < 32;
         PocketSeed = pocketSeed; PocketMin = pocketMin; Shadow = shadow; NoWhite = noWhite; FillCores = fillCores; ColorToAlpha = colorToAlpha; HotCores = hotCores;
         var casts = new List<List<byte[]>>();
         int W = 0, H = 0;
@@ -611,5 +684,8 @@ $sheets = @($dirs | ForEach-Object {
 })
 $idle = if ($NoIdle) { $null } else { Join-Path $res "$base.png" }
 $defeated = if ($defeatIndex -ge 0) { Join-Path $res "${base}_defeated.png" } else { $null }
-[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $reviveIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin, $NoWhite.IsPresent, $FillCores.IsPresent, $ColorToAlpha.IsPresent, $HotCores.IsPresent, $ReviveGlow.IsPresent)
+# -BlackBg: figures on a plain black background (enemies from bot_03): tighter edges.
+# Enclosed dark patches are the robe's own deepest folds on black, not background, so no pockets.
+if ($BlackBg) { $hardBg = 14; $softBg = 40; if (-not $PSBoundParameters.ContainsKey('PocketSeed')) { $PocketSeed = 0 } } else { $hardBg = 32; $softBg = 84 }
+[AvatarCut]::Run($dirs, $idle, $sheets, $defeated, $defeatIndex, $reviveIndex, $Height, $Cols, $PocketSeed, $PocketMin, $Shadow.IsPresent, $FigureMargin, $NoWhite.IsPresent, $FillCores.IsPresent, $ColorToAlpha.IsPresent, $HotCores.IsPresent, $ReviveGlow.IsPresent, $hardBg, $softBg)
 & (Join-Path $PSScriptRoot 'to-webp.ps1') -Files (@($idle, $defeated) + $sheets | Where-Object { $_ })
