@@ -81,7 +81,7 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - An explosion **breaks the walls right next to it**: left, right, above and below (not diagonally).
   Whatever stood on a broken wall then falls.
 - A broken wall shatters on screen: its crystal bricks crumble into shards that fly out past the cell
-  (a 0.7 s clip), with a blue ring and the glass sound.
+  (a 0.7 s clip), with a blue ring and its own sound: a heavy glass crash and an icy shatter.
 - Walls don't count for lines of 3: a wall between two globes breaks the line.
 - Bots conjure walls too: about one in five of a mage's planned moves is a wall in a random middle column
   (`Rules.BOT_WALL_CHANCE`), shown in its queue as a wall button marked with the column (↓3). The same

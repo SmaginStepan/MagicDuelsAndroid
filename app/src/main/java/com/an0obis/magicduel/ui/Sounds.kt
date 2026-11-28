@@ -13,7 +13,7 @@ import kotlin.random.Random
  * sounds don't feel mechanical. Nothing plays while [enabled] is false (Options → Sound effects).
  */
 class Sounds(context: Context) {
-    enum class Fx { CAST, LAUNCH, FREEZE, POP, HIT_FIRE, HIT_WATER, HIT_EARTH, HIT_AIR, HIT_SHADOW, UI_CLICK, UI_MENU, UI_TOGGLE, UI_BACK, WIN, LOSE }
+    enum class Fx { CAST, LAUNCH, FREEZE, POP, WALL_BREAK, WALL_SHARDS, HIT_FIRE, HIT_WATER, HIT_EARTH, HIT_AIR, HIT_SHADOW, UI_CLICK, UI_MENU, UI_TOGGLE, UI_BACK, WIN, LOSE }
 
     var enabled = true
 
@@ -43,6 +43,9 @@ class Sounds(context: Context) {
         Fx.UI_BACK to intArrayOf(R.raw.sfx_ui_back),
         Fx.WIN to intArrayOf(R.raw.sfx_win),
         Fx.LOSE to intArrayOf(R.raw.sfx_lose),
+        // A wall breaking: a heavy glass crash, layered with an icy shatter (see GameView, WallsBroken).
+        Fx.WALL_BREAK to intArrayOf(R.raw.sfx_wall_break_1, R.raw.sfx_wall_break_2),
+        Fx.WALL_SHARDS to intArrayOf(R.raw.sfx_wall_shards_1, R.raw.sfx_wall_shards_2),
     ).mapValues { (_, res) -> IntArray(res.size) { pool.load(context, res[it], 1) } }
 
     /** Plays [fx] at [volume] (0..1) with a slightly random pitch. */

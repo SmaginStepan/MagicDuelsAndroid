@@ -50,7 +50,7 @@ edge, so only a faint glow line remains.
 - In the game: `res/drawable-nodpi/wall_button.webp` and `wall_block_1` … `wall_block_11.webp`
   (`Art.wallButton`, `Art.wallBlock`). A wall fills 94% of its cell. A new one grows in with a blue flash
   from the bottom of the column up, a standing one shimmers gently, and a broken one plays the shatter
-  clip below, with a blue ring and the glass sound.
+  clip below, with a blue ring and its own sound (heavy glass crash and icy shatter, audio/SOUNDS.md).
 
 ## Breaking: the shatter clip (2026-11-28)
 

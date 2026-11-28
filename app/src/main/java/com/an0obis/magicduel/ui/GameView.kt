@@ -815,9 +815,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 val lowest = e.cells.maxOfOrNull { it.row } ?: 0
                 e.cells.forEach { wallRise[it.row][it.col] = -(lowest - it.row) * WALL_RISE_STAGGER / WALL_RISE_TIME }
             }
-            // A wall is magic glass: it shatters into shards with a flash of its gold light.
+            // A wall is magic crystal: it shatters into shards with a flash of its light, and its own
+            // sound: a heavy glass crash with an icy shatter on top (not the globes' lighter pop).
             is BattleEvent.WallsBroken -> {
-                sounds.play(Sounds.Fx.POP, 0.9f)
+                sounds.play(Sounds.Fx.WALL_BREAK, 1f)
+                sounds.play(Sounds.Fx.WALL_SHARDS, 0.55f)
                 e.cells.forEach {
                     val x = cellX(it.col.toFloat())
                     val y = cellY(it.row.toFloat())

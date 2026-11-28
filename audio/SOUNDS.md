@@ -7,8 +7,8 @@ played by `ui/Sounds.kt` (Android `SoundPool`); Options → Sound effects turns 
 
 | Pack | Where | Licence | Used for |
 |---|---|---|---|
-| Basic Spell Impacts (20 WAV, 48 kHz/24-bit) by lentikula | https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx | CC0 | fire, water and lightning hits; ice for the freeze |
-| Impact Sounds (130 OGG) by Kenney | https://kenney.nl/assets/impact-sounds | CC0 | earth hits (impactMining), globes bursting (impactGlass_medium) |
+| Basic Spell Impacts (20 WAV, 48 kHz/24-bit) by lentikula | https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx | CC0 | fire, water and lightning hits; ice for the freeze and walls breaking |
+| Impact Sounds (130 OGG) by Kenney | https://kenney.nl/assets/impact-sounds | CC0 | earth hits (impactMining), globes bursting (impactGlass_medium), walls breaking (impactGlass_heavy) |
 | Interface Sounds (100 OGG) by Kenney | https://kenney.nl/assets/interface-sounds | CC0 | menu taps, toggles, cancel, win, lose |
 | Magic Spell SFX (7 OGG) by JaggedStone | https://opengameart.org/content/magic-spell-sfx | CC0 | casting, launch, shadow hits |
 
@@ -22,6 +22,7 @@ The packs themselves are not in the repository.
 | A shot is launched | `sfx_launch.ogg` | magical_5.ogg | 0.55 |
 | A shot freezes into its globe | `sfx_freeze_1/2.wav` | Ice Spell Impact 4, 5 | 0.5 |
 | Matched globes burst | `sfx_pop_1/2.ogg` | impactGlass_medium_000, 002 | 0.8 |
+| A wall breaks (both at once) | `sfx_wall_break_1/2.ogg` + `sfx_wall_shards_1/2.wav` | impactGlass_heavy_000, 002 + Ice Spell Impact 1, 3 | 1 + 0.55 |
 | Fire hits a mage | `sfx_hit_fire_1/2.wav` | Fire Spell Impact 3, 4 | 1 |
 | Water hits a mage | `sfx_hit_water_1/2.wav` | Water Spell Impact 4, 1 | 1 |
 | Earth hits a mage | `sfx_hit_earth_1/2.ogg` | impactMining_000, 003 | 1 |
@@ -36,4 +37,5 @@ The packs themselves are not in the repository.
 Variants are picked at random and every sound plays at a slightly random pitch (±6%).
 
 The WAVs were made with `tools/audio/wav-sfx.ps1`: mono, 22050 Hz, 16-bit, leading silence trimmed,
-cut to 1.2 s (freeze 0.9 s) with a 0.12 s fade-out, peak-normalised. All sounds together are 619 KB.
+cut to 1.2 s (freeze and wall shards 0.9 s) with a 0.12 s fade-out, peak-normalised. The Kenney OGGs are
+used as they are. All sounds together are about 715 KB.
