@@ -215,15 +215,6 @@ class BattleTest {
     }
 
     @Test
-    fun givingUpEndsTheDuelAsADefeat() {
-        val b = downedBattle()
-        assertTrue(b.giveUp())
-        assertEquals(Side.ENEMY, b.winner)
-        assertTrue(b.drainEvents().contains(BattleEvent.GameOver(Side.ENEMY)))
-        assertFalse(b.giveUp()) // only once
-    }
-
-    @Test
     fun shotIntoFullRowBackfiresOnCaster() {
         val board = Board.parse(".....", ".....", ".....", ".....", "FWEAF")
         val b = Battle(dummy, seed = 1, startBoard = board, introTime = 0f)

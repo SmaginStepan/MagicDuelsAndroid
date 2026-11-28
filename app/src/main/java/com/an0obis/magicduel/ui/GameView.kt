@@ -216,7 +216,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** When the shop last said purchases are coming soon (a tap on a pack in a release build). */
     private var shopNoteAt = -10f
 
-    /** Time since you went down (your collapse plays over it); it keeps running if you give up. */
+    /** Time since you went down (your collapse plays over it). */
     private var downTimer = 0f
 
     /** How far the revive in its popup has played, in seconds, or -1 while the popup offers it. */
@@ -555,13 +555,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         afterglow[Side.PLAYER.ordinal] = 1f
         lastCastColor[Side.PLAYER.ordinal] = avatar.glow
         sounds.play(Sounds.Fx.FREEZE, 0.9f)
-    }
-
-    /** Give up: the duel ends as a defeat. */
-    private fun giveUp() {
-        if (reviveT >= 0f) return
-        dialog = null
-        battle.giveUp()
     }
 
     /** A pack in the shop: free in debug builds (to test with), "coming soon" until Google Play billing is in. */
@@ -1027,7 +1020,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 hit != null && hit.startsWith("lang_") -> setLanguage(hit.removePrefix("lang_"))
                 hit == "collect" -> collectGift()
                 hit == "revive" -> startRevive()
-                hit == "give_up" -> giveUp()
                 hit != null && hit.startsWith("pack_") -> buyPack(hit.removePrefix("pack_").toInt())
                 // The daily gift and the revive popup wait for their buttons.
                 open == Dialog.DAILY || open == Dialog.REVIVE -> Unit
@@ -2074,7 +2066,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The revive popup, after your collapse: your fallen avatar with Revive (free) and Give up. A revive
+     * The revive popup, after your collapse: your fallen avatar and Revive (free; the only way on). It
      * plays here: the avatar rises in a glow of its crystal's colour, then the duel starts over.
      */
     private fun drawRevive(c: Canvas) {
@@ -2137,12 +2129,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         msg.forEachIndexed { i, line -> label(c, line, cx, y + 0.3f * u + i * 0.42f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER) }
         if (playing) return
         val by = card.bottom - pad - 0.9f * u
-        val half = (w - 2 * pad - 0.3f * u) / 2f
-        val quit = RectF(card.left + pad, by, card.left + pad + half, by + 0.9f * u)
-        val go = RectF(card.right - pad - half, by, card.right - pad, by + 0.9f * u)
-        drawButton(c, quit, s(R.string.give_up), null, primary = false, small = true)
-        dialogButtons["give_up"] = quit
-        drawButton(c, go, s(R.string.revive), null, primary = true, small = true)
+        val go = RectF(cx - 1.8f * u, by, cx + 1.8f * u, by + 0.9f * u)
+        drawButton(c, go, s(R.string.revive), null, primary = true, small = false)
         dialogButtons["revive"] = go
     }
 
@@ -2223,7 +2211,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /**
      * Closes the open popup: the restart question and an avatar choice opened from Options go back to
      * Options; closing the daily gift collects it.
-     * The revive popup stays until you revive or give up.
+     * The revive popup stays until you revive (Back steps out to the menu).
      */
     private fun closeDialog() {
         if (dialog == Dialog.DAILY) {
@@ -2824,8 +2812,11 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         c.restore()
     }
 
-    /** When the end card starts fading in: soon after you give up (your collapse played before the revive popup). */
-    private fun endCardDelay(): Float = if (battle.winner == Side.ENEMY) GIVE_UP_CARD_DELAY else END_CARD_DELAY
+    /**
+     * When the end card starts fading in. Only a win ends a duel now (going down always leads to the
+     * revive), so it's the same for every end card.
+     */
+    private fun endCardDelay(): Float = END_CARD_DELAY
 
     /**
      * The defeated pose shown on the end card: the beaten opponent's when you win (the dummies share
@@ -2921,9 +2912,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
         /** The light behind the training dummies on the title card. */
         val BANNER_DUMMY_GLOW = 0xFFE0B46A.toInt()
-
-        /** After you give up, the end card starts fading in this soon. */
-        const val GIVE_UP_CARD_DELAY = 0.25f
 
         /** Languages in Options: code and name in that language. */
         val LANGUAGES = listOf("en" to "English", "ru" to "Русский", "es" to "Español")

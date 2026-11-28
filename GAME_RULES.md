@@ -106,12 +106,12 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   counts up. After day 7 the streak starts again at day 1; a missed day resets it to day 1. Turning the
   phone's date back gives nothing.
 - **Going down**: at 0 HP you don't lose straight away. The duel pauses (your cast is called off and
-  shots on their way vanish), your avatar plays its collapse, then the **revive popup** shows it fallen:
-  **Revive** (free) or **Give up**. Revive plays the avatar rising back up in a glow of its crystal's
+  shots on their way vanish), your avatar plays its collapse, then the **revive popup** shows it fallen
+  with one button, **Revive** (free). It plays the avatar rising back up in a glow of its crystal's
   colour (a clip of its own per avatar), then the **duel starts over** at the same level: a fresh
-  board, both at full HP, the bot's plan and the intro again. Give up ends the duel as a defeat (the
-  end card follows at once; a tap then starts the same level again). Revives work against the dummies
-  too and don't change the leaderboard.
+  board, both at full HP, the bot's plan and the intro again. There is no giving up: Back steps out to
+  the menu, and the popup is waiting when you return to the duel. Revives work against the dummies too
+  and don't change the leaderboard.
 - **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
   builds until Google Play billing is in) and, coming soon, paid avatars.
 
@@ -151,9 +151,10 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - Mages have Midjourney avatars with cybernetic parts that grow level by level (`art/enemies/PLAN.md`;
   the first two are made so far, later mages use the drawn mage). A bot's avatar plays its cast animation
   over each cast and throws the magic itself.
-- Win to go up a level; lose to retry the same level. Your level is saved on the phone.
-- The end card shows the loser's **defeated pose**: a beaten bot sinks into it on the field, the dummies
-  share one, and when you give up your fallen avatar (see Essence) is shown.
+- Win to go up a level; going down means a revive and the same level again (see Essence). Your level
+  is saved on the phone.
+- The victory card shows the beaten opponent's **defeated pose**: a beaten bot sinks into it on the
+  field, and the dummies share one.
 
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 

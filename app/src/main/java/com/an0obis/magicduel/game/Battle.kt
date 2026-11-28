@@ -174,7 +174,7 @@ sealed interface BattleEvent {
     data class PushOutHit(val target: Side, val damage: Int, val element: Element) : BattleEvent
     data class GameOver(val winner: Side) : BattleEvent
 
-    /** You reached 0 HP: the duel pauses until you revive (it starts over) or give up. */
+    /** You reached 0 HP: the duel pauses until you revive (it starts over). */
     object PlayerDown : BattleEvent
 }
 
@@ -578,7 +578,7 @@ class Battle(
         if (target.hp > 0) return
         if (side == Side.PLAYER) {
             // You are down, not out: the duel pauses until you revive (the screen starts the duel
-            // over) or give up. Your cast is called off and every shot on its way vanishes.
+            // over). Your cast is called off and every shot on its way vanishes.
             cancelCast()
             enemy.cancelCast()
             flying.forEach { it.state = Projectile.State.DONE }
@@ -598,19 +598,11 @@ class Battle(
     }
 
     /**
-     * True while you are at 0 HP and the duel is paused, waiting for a revive (a fresh duel at the
-     * same level) or [giveUp]. Nobody casts, nothing flies; the field only settles.
+     * True while you are at 0 HP and the duel is paused, waiting for the revive (the screen starts a
+     * fresh duel at the same level). Nobody casts, nothing flies; the field only settles.
      */
     var playerDown = false
         private set
-
-    /** You don't revive: the duel ends as a defeat. */
-    fun giveUp(): Boolean {
-        if (!playerDown) return false
-        playerDown = false
-        end(Side.ENEMY)
-        return true
-    }
 
     private fun snapshotPositions() {
         board.forEachGlobe { r, c, g ->
