@@ -16,9 +16,6 @@ object Rules {
     const val DAMAGE_PER_GLOBE = 5
     const val BACKFIRE_DAMAGE = 10
 
-    /** After a revive the bot waits at least this long (seconds) before its next cast. */
-    const val REVIVE_GRACE = 3f
-
     /** The player's base cast time; casting into a lane takes longer, see [castTime]. */
     const val PLAYER_CAST_TIME = 2.7f
 

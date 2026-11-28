@@ -9,6 +9,9 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   (`Rules.FIELD_CELL_UNITS`), so the field is 6.25 units wide and each side lane 1.75; the whole width
   is 9.75 units, and the mages, panels and spell grid are sized in layout units.
 - You (bottom left) with HP bar, and the 5×3 spell grid (bottom right). Grid row N fires into lane N.
+- Every duel (a new level, a retry, a revive) opens with a title card over the field for 1.6 s, while
+  nobody can cast yet: the opponent's figure, **Level X** and the opponent's name. It pops in and fades
+  as the duel begins.
 
 ## Casting
 - Tap a spell: your mage casts it (animated). You can't cast again until it finishes. Casting takes
@@ -95,19 +98,20 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - The first time the app opens, it asks your name (once, if none is set; Options can change it).
 
 ## Essence, revives and the shop (`Economy.kt`)
-- **Essence** (the glowing crystal) pays for revives. A new player starts with **3**.
+- **Essence** (the glowing crystal) is collected from the daily gift and the shop; revives are free.
+  A new player starts with **3**.
 - **Daily gift**: the first time the app opens on a new day (the phone's date), a popup shows the
   7-day streak and today's gift: **1 essence** plus a **streak bonus** of 0, 1, 1, 2, 2, 3, 5 on days
   1 to 7 in a row (1, 2, 2, 3, 3, 4, 6 in all, 21 a week). **Collect** adds it and the menu's counter
   counts up. After day 7 the streak starts again at day 1; a missed day resets it to day 1. Turning the
   phone's date back gives nothing.
 - **Going down**: at 0 HP you don't lose straight away. The duel pauses (your cast is called off and
-  shots on their way vanish), your avatar plays its collapse, then the **revive popup** shows it fallen,
-  what a revive costs and your essence: **Revive** or **Give up**. Revives in one duel cost **1, 2, 4,
-  8 …** essence. Revive plays the avatar rising back up in a glow of its crystal's colour (a clip of its
-  own per avatar), then the duel goes on with **full HP**; the bot waits at least 3 s before its next
-  cast. Without enough essence, **Shop** takes Revive's place. Give up ends the duel as a defeat (the
-  end card follows at once). Revives work against the dummies too and don't change the leaderboard.
+  shots on their way vanish), your avatar plays its collapse, then the **revive popup** shows it fallen:
+  **Revive** (free) or **Give up**. Revive plays the avatar rising back up in a glow of its crystal's
+  colour (a clip of its own per avatar), then the **duel starts over** at the same level: a fresh
+  board, both at full HP, the bot's plan and the intro again. Give up ends the duel as a defeat (the
+  end card follows at once; a tap then starts the same level again). Revives work against the dummies
+  too and don't change the leaderboard.
 - **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
   builds until Google Play billing is in) and, coming soon, paid avatars.
 

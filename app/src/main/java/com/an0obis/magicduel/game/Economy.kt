@@ -1,7 +1,8 @@
 package com.an0obis.magicduel.game
 
 /**
- * Essence, the resource a revive costs, and the daily gift that hands it out.
+ * Essence, the game's crystal currency (from the daily gift and shop packs; revives are free), and
+ * the daily gift that hands it out.
  *
  * Once a day (the phone's date, as an epoch day) the first launch collects [DAILY_ESSENCE] plus a
  * streak bonus: the n-th day in a row gets [STREAK_BONUS] of n, over a 7-day cycle that starts again
@@ -71,8 +72,5 @@ class Economy(
         val STREAK_BONUS = intArrayOf(0, 1, 1, 2, 2, 3, 5)
 
         const val NEVER = Long.MIN_VALUE
-
-        /** What the [n]-th revive in one duel costs (n = 1, 2, 3 …): 1, 2, 4, 8 … essence. */
-        fun reviveCost(n: Int): Int = 1 shl (n - 1).coerceIn(0, 20)
     }
 }

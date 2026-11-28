@@ -64,9 +64,4 @@ class EconomyTest {
         assertTrue(e.spend(2))
         assertEquals(0, e.essence)
     }
-
-    @Test
-    fun revivesInOneDuelDoubleInCost() {
-        assertEquals(listOf(1, 2, 4, 8), (1..4).map { Economy.reviveCost(it) })
-    }
 }

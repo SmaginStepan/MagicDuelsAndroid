@@ -47,8 +47,6 @@
     <string name="pushed_out">Pushed out!</string>
     <string name="chain_fmt">Chain ×%1$d!</string>
     <string name="dummy_info">Training dummy: doesn\'t fire back</string>
-    <string name="get_ready">Get ready</string>
-    <string name="duel">Duel!</string>
     <string name="victory">Victory!</string>
     <string name="defeated">Defeated</string>
     <string name="tutorial_complete_next">Tutorial complete! Next: %1$s</string>
@@ -82,9 +80,7 @@
     <string name="daily_hint">Come back tomorrow for a bigger bonus. Miss a day and the streak starts over.</string>
     <string name="collect">Collect</string>
     <string name="revive_title">You fell!</string>
-    <string name="revive_msg">Revive with full health and fight on. Each revive in a duel costs twice as much as the last.</string>
-    <string name="revive_short">Not enough essence to revive. Get more in the shop, or give up this duel.</string>
-    <string name="you_have_fmt">You have %1$d</string>
+    <string name="revive_msg">Rise again for free and start this duel over from the beginning.</string>
     <string name="revive">Revive</string>
     <string name="give_up">Give up</string>
     <string name="reviving">Reviving…</string>

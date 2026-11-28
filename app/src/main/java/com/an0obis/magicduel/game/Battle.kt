@@ -99,11 +99,6 @@ class Caster(val side: Side, val maxHp: Int, val baseCastTime: Float, val castSc
         return move
     }
 
-    /** Back to full HP (a revive). */
-    internal fun restore() {
-        hp = maxHp
-    }
-
     internal fun takeDamage(amount: Int) {
         hp = (hp - amount).coerceAtLeast(0)
     }
@@ -179,11 +174,8 @@ sealed interface BattleEvent {
     data class PushOutHit(val target: Side, val damage: Int, val element: Element) : BattleEvent
     data class GameOver(val winner: Side) : BattleEvent
 
-    /** You reached 0 HP: the duel pauses for a revive ([revivesSoFar] in this duel so far). */
-    data class PlayerDown(val revivesSoFar: Int) : BattleEvent
-
-    /** You came back with full HP (the [count]-th revive in this duel). */
-    data class Revived(val count: Int) : BattleEvent
+    /** You reached 0 HP: the duel pauses until you revive (it starts over) or give up. */
+    object PlayerDown : BattleEvent
 }
 
 /**
@@ -585,14 +577,13 @@ class Battle(
         target.takeDamage(amount)
         if (target.hp > 0) return
         if (side == Side.PLAYER) {
-            // You are down, not out: the duel pauses until you revive or give up. Your cast is called
-            // off (the spells come back) and every shot on its way vanishes, so a revive doesn't
-            // start under fire.
+            // You are down, not out: the duel pauses until you revive (the screen starts the duel
+            // over) or give up. Your cast is called off and every shot on its way vanishes.
             cancelCast()
             enemy.cancelCast()
             flying.forEach { it.state = Projectile.State.DONE }
             playerDown = true
-            events += BattleEvent.PlayerDown(revives)
+            events += BattleEvent.PlayerDown
             return
         }
         end(side.opponent)
@@ -607,26 +598,11 @@ class Battle(
     }
 
     /**
-     * True while you are at 0 HP and the duel is paused, waiting for [revive] or [giveUp]. Nobody
-     * casts, nothing flies; the field only settles.
+     * True while you are at 0 HP and the duel is paused, waiting for a revive (a fresh duel at the
+     * same level) or [giveUp]. Nobody casts, nothing flies; the field only settles.
      */
     var playerDown = false
         private set
-
-    /** How many times you revived in this duel (the next revive costs Economy.reviveCost(revives + 1)). */
-    var revives = 0
-        private set
-
-    /** Brings you back with full HP; the duel goes on from where it stopped (the bot waits a moment). */
-    fun revive(): Boolean {
-        if (!playerDown) return false
-        playerDown = false
-        revives++
-        player.restore()
-        botWait = max(botWait, Rules.REVIVE_GRACE)
-        events += BattleEvent.Revived(revives)
-        return true
-    }
 
     /** You don't revive: the duel ends as a defeat. */
     fun giveUp(): Boolean {

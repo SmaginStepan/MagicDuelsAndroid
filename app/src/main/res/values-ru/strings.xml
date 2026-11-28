@@ -44,8 +44,6 @@
     <string name="pushed_out">Вытолкнута!</string>
     <string name="chain_fmt">Цепь ×%1$d!</string>
     <string name="dummy_info">Тренировочное чучело: не отвечает</string>
-    <string name="get_ready">Приготовьтесь</string>
-    <string name="duel">Дуэль!</string>
     <string name="victory">Победа!</string>
     <string name="defeated">Поражение</string>
     <string name="tutorial_complete_next">Обучение пройдено! Далее: %1$s</string>
@@ -78,9 +76,7 @@
     <string name="daily_hint">Заходите завтра за бонусом побольше. Пропустите день — серия начнётся заново.</string>
     <string name="collect">Забрать</string>
     <string name="revive_title">Вы пали!</string>
-    <string name="revive_msg">Воскресните с полным здоровьем и продолжайте бой. Каждое следующее воскрешение в дуэли стоит вдвое дороже.</string>
-    <string name="revive_short">Не хватает эссенции. Возьмите ещё в магазине или сдайтесь в этой дуэли.</string>
-    <string name="you_have_fmt">У вас %1$d</string>
+    <string name="revive_msg">Поднимитесь бесплатно и начните эту дуэль заново.</string>
     <string name="revive">Воскреснуть</string>
     <string name="give_up">Сдаться</string>
     <string name="reviving">Воскрешение…</string>

@@ -166,7 +166,7 @@ a few stills.
 
 ## Revive (one per avatar, Google Flow, 2026-11-27)
 
-Played in the revive popup when you spend essence to get back up (`avatar_<name>_revive.webp`).
+Played in the revive popup when you revive, before the duel starts over (`avatar_<name>_revive.webp`).
 Veo 3.1 Lite, 9:16, x2 each, silent, project `fcb5346a-…`, 60 credits. **Start** = the last frame of
 the avatar's defeat clip (`anim/<name>/defeat/frame_47.png`, kneeling), **End** = its idle still, so
 the clip begins exactly where the collapse ended and finishes in the idle pose. The prompt: `{Who}

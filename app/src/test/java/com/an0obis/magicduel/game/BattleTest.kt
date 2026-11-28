@@ -189,7 +189,7 @@ class BattleTest {
         b.spells[4, 0] = Element.WATER
         assertTrue(b.tryCast(4, 0))
         val events = runCollecting(b, shotTime(4))
-        assertTrue(events.contains(BattleEvent.PlayerDown(0)))
+        assertTrue(events.contains(BattleEvent.PlayerDown))
         return b
     }
 
@@ -204,15 +204,14 @@ class BattleTest {
     }
 
     @Test
-    fun aReviveBringsYouBackWithFullHp() {
+    fun whileDownNothingHurtsAndTheBotDoesNotCast() {
         val b = downedBattle()
-        assertTrue(b.revive())
-        assertFalse(b.playerDown)
-        assertEquals(Rules.PLAYER_HP, b.player.hp)
-        assertEquals(1, b.revives)
-        assertTrue(b.drainEvents().contains(BattleEvent.Revived(1)))
-        assertTrue(b.tryCast(0, 0))
-        assertFalse(b.revive()) // nothing to revive from
+        b.drainEvents()
+        run(b, 30f)
+        assertTrue(b.playerDown)
+        assertTrue(b.projectiles.isEmpty())
+        assertFalse(b.enemy.isCasting)
+        assertTrue(b.drainEvents().none { it is BattleEvent.Launched || it is BattleEvent.GameOver })
     }
 
     @Test
@@ -221,7 +220,7 @@ class BattleTest {
         assertTrue(b.giveUp())
         assertEquals(Side.ENEMY, b.winner)
         assertTrue(b.drainEvents().contains(BattleEvent.GameOver(Side.ENEMY)))
-        assertFalse(b.revive())
+        assertFalse(b.giveUp()) // only once
     }
 
     @Test

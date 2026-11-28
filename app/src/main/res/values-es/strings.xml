@@ -44,8 +44,6 @@
     <string name="pushed_out">¡Expulsada!</string>
     <string name="chain_fmt">¡Cadena ×%1$d!</string>
     <string name="dummy_info">Muñeco de práctica: no contraataca</string>
-    <string name="get_ready">Prepárate</string>
-    <string name="duel">¡Duelo!</string>
     <string name="victory">¡Victoria!</string>
     <string name="defeated">Derrota</string>
     <string name="tutorial_complete_next">¡Tutorial completado! Siguiente: %1$s</string>
@@ -78,9 +76,7 @@
     <string name="daily_hint">Vuelve mañana para un bonus mayor. Si faltas un día, la racha empieza de nuevo.</string>
     <string name="collect">Recoger</string>
     <string name="revive_title">¡Has caído!</string>
-    <string name="revive_msg">Revive con toda la salud y sigue luchando. Cada vez que revives en un duelo cuesta el doble que la anterior.</string>
-    <string name="revive_short">No tienes esencia suficiente. Consigue más en la tienda o ríndete en este duelo.</string>
-    <string name="you_have_fmt">Tienes %1$d</string>
+    <string name="revive_msg">Levántate gratis y empieza este duelo de nuevo desde el principio.</string>
     <string name="revive">Revivir</string>
     <string name="give_up">Rendirse</string>
     <string name="reviving">Reviviendo…</string>

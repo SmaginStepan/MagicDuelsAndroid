@@ -213,9 +213,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     /** The "Choose your avatar" popup was opened from Options (closing it goes back there). */
     private var avatarFromOptions = false
 
-    /** The shop was opened from the revive popup (closing it goes back there). */
-    private var shopFromRevive = false
-
     /** When the shop last said purchases are coming soon (a tap on a pack in a release build). */
     private var shopNoteAt = -10f
 
@@ -532,15 +529,32 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialog = null
     }
 
-    /** What the next revive in this duel costs: 1, then 2, 4 … essence. */
-    private fun reviveCost(): Int = Economy.reviveCost(battle.revives + 1)
-
-    /** Revive: the essence is spent and the revive plays in the popup (see stepRevive). */
+    /** Revive (free): it plays in the popup, then the duel starts over (see stepRevive). */
     private fun startRevive() {
-        if (reviveT >= 0f || !battle.playerDown || !economy.spend(reviveCost())) return
-        save()
+        if (reviveT >= 0f || !battle.playerDown) return
         reviveT = 0f
         sounds.play(Sounds.Fx.CAST, 0.8f)
+    }
+
+    /**
+     * After the revive has played: the duel starts over at the same level (a fresh board, both at
+     * full HP, the bot's plan and the intro again), with a flash of your crystal's light.
+     */
+    private fun restartAfterRevive() {
+        reviveT = -1f
+        dialog = null
+        startBattle()
+        val at = chest(Side.PLAYER)
+        rings += Ring(at.x, at.y, avatar.glow, 0.3f * u, 2.4f * u, 0.6f)
+        // Over your avatar, but kept on screen (it starts 15% larger, see drawTexts).
+        val note = s(R.string.revived)
+        text.textSize = 0.42f * u
+        val half = text.measureText(note) * 1.15f / 2f
+        val nx = at.x.coerceIn(0.2f * u + half, width - 0.2f * u - half)
+        texts += FloatText(note, nx, at.y - playerH * 0.35f, mix(avatar.glow, WHITE, 0.3f), 0.42f * u, 1.3f)
+        afterglow[Side.PLAYER.ordinal] = 1f
+        lastCastColor[Side.PLAYER.ordinal] = avatar.glow
+        sounds.play(Sounds.Fx.FREEZE, 0.9f)
     }
 
     /** Give up: the duel ends as a defeat. */
@@ -572,8 +586,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * Down at 0 HP: once your collapse has played, the revive popup opens. A bought revive plays in it,
-     * then the popup closes and the duel goes on.
+     * Down at 0 HP: once your collapse has played, the revive popup opens. A revive plays in it, then
+     * the popup closes and the duel starts over.
      */
     private fun stepRevive(dt: Float) {
         if (!battle.playerDown) return
@@ -583,11 +597,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
         if (dialog == Dialog.REVIVE && reviveT >= 0f) {
             reviveT += dt
-            if (reviveT >= REVIVE_ANIM_TIME + REVIVE_HOLD) {
-                reviveT = -1f
-                dialog = null
-                battle.revive()
-            }
+            if (reviveT >= REVIVE_ANIM_TIME + REVIVE_HOLD) restartAfterRevive()
         }
     }
 
@@ -698,8 +708,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val i = side.ordinal
             val hp = battle.caster(side).hp.toFloat()
             if (sparks.none { s -> s.hit?.target == side }) shownHp[i] = min(shownHp[i], hp)
-            // After a revive the bar fills back up.
-            if (hp > shownHp[i]) shownHp[i] = min(hp, shownHp[i] + dt * battle.caster(side).maxHp / HP_REFILL_TIME)
             trailHp[i] = if (trailHp[i] > shownHp[i]) {
                 max(shownHp[i], trailHp[i] - dt * max(25f, (trailHp[i] - shownHp[i]) * 2.5f))
             } else {
@@ -837,21 +845,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 // The revive popup plays the revive (or, without one, the collapse backwards).
                 art.prepareSheet(avatar.defeatRes)
                 avatar.reviveRes?.let { art.prepareSheet(it) }
-            }
-            // Back on your feet: a flash of your crystal's light and the HP bar filling up.
-            is BattleEvent.Revived -> {
-                downTimer = 0f
-                val at = chest(Side.PLAYER)
-                rings += Ring(at.x, at.y, avatar.glow, 0.3f * u, 2.4f * u, 0.6f)
-                // Over your avatar, but kept on screen (it starts 15% larger, see drawTexts).
-                val note = s(R.string.revived)
-                text.textSize = 0.42f * u
-                val half = text.measureText(note) * 1.15f / 2f
-                val nx = at.x.coerceIn(0.2f * u + half, width - 0.2f * u - half)
-                texts += FloatText(note, nx, at.y - playerH * 0.35f, mix(avatar.glow, WHITE, 0.3f), 0.42f * u, 1.3f)
-                afterglow[Side.PLAYER.ordinal] = 1f
-                lastCastColor[Side.PLAYER.ordinal] = avatar.glow
-                sounds.play(Sounds.Fx.FREEZE, 0.9f)
             }
         }
     }
@@ -1035,10 +1028,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 hit == "collect" -> collectGift()
                 hit == "revive" -> startRevive()
                 hit == "give_up" -> giveUp()
-                hit == "shop_open" -> {
-                    shopFromRevive = open == Dialog.REVIVE
-                    openDialog(Dialog.SHOP)
-                }
                 hit != null && hit.startsWith("pack_") -> buyPack(hit.removePrefix("pack_").toInt())
                 // The daily gift and the revive popup wait for their buttons.
                 open == Dialog.DAILY || open == Dialog.REVIVE -> Unit
@@ -1070,10 +1059,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             }
             "pvp" -> dialog = Dialog.PVP
             "options" -> dialog = Dialog.OPTIONS
-            "shop", "essence" -> {
-                shopFromRevive = false
-                dialog = Dialog.SHOP
-            }
+            "shop", "essence" -> dialog = Dialog.SHOP
             else -> return
         }
         if (dialog != null) dialogOpenedAt = clock
@@ -2088,19 +2074,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The revive popup, after your collapse: your fallen avatar, what a revive costs and the essence you
-     * have, with Revive and Give up (Shop instead of Revive when you're short). A bought revive plays
-     * here: the avatar rises in a glow of its crystal's colour, then the duel goes on.
+     * The revive popup, after your collapse: your fallen avatar with Revive (free) and Give up. A revive
+     * plays here: the avatar rises in a glow of its crystal's colour, then the duel starts over.
      */
     private fun drawRevive(c: Canvas) {
         val w = min(width - 1.2f * u, 7.4f * u)
         val pad = 0.35f * u
         val picH = 4.6f * u
-        val cost = reviveCost()
         val playing = reviveT >= 0f
-        val enough = economy.essence >= cost
-        val msg = wrap(s(if (enough || playing) R.string.revive_msg else R.string.revive_short), 0.3f * u, w - 2 * pad)
-        val h = 1.3f * u + picH + 0.3f * u + msg.size * 0.42f * u + 0.5f * u + 0.35f * u + 0.9f * u + pad
+        val msg = wrap(s(R.string.revive_msg), 0.3f * u, w - 2 * pad)
+        val h = 1.3f * u + picH + 0.3f * u + msg.size * 0.42f * u + 0.35f * u + 0.9f * u + pad
         val card = drawCard(c, w, h, s(if (playing) R.string.reviving else R.string.revive_title))
         val cx = card.centerX()
         val pic = RectF(card.left + pad, card.top + 1.3f * u, card.right - pad, card.top + 1.3f * u + picH)
@@ -2150,10 +2133,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         stroke.color = withAlpha(GOLD, 120)
         stroke.strokeWidth = 0.035f * u
         c.drawRoundRect(pic, 0.25f * u, 0.25f * u, stroke)
-        var y = pic.bottom + 0.3f * u
+        val y = pic.bottom + 0.3f * u
         msg.forEachIndexed { i, line -> label(c, line, cx, y + 0.3f * u + i * 0.42f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER) }
-        y += msg.size * 0.42f * u
-        drawAmount(c, s(R.string.you_have_fmt, (shownEssence + 0.5f).toInt()), cx, y + 0.38f * u, 0.3f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
         if (playing) return
         val by = card.bottom - pad - 0.9f * u
         val half = (w - 2 * pad - 0.3f * u) / 2f
@@ -2161,14 +2142,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val go = RectF(card.right - pad - half, by, card.right - pad, by + 0.9f * u)
         drawButton(c, quit, s(R.string.give_up), null, primary = false, small = true)
         dialogButtons["give_up"] = quit
-        if (enough) {
-            drawButton(c, go, "", null, primary = true, small = true)
-            drawAmount(c, s(R.string.revive) + "  $cost", go.centerX(), go.centerY() + 0.12f * u, 0.34f * u, GOLD, Paint.Align.CENTER)
-            dialogButtons["revive"] = go
-        } else {
-            drawButton(c, go, s(R.string.shop), null, primary = true, small = true)
-            dialogButtons["shop_open"] = go
-        }
+        drawButton(c, go, s(R.string.revive), null, primary = true, small = true)
+        dialogButtons["revive"] = go
     }
 
     /**
@@ -2247,7 +2222,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     /**
      * Closes the open popup: the restart question and an avatar choice opened from Options go back to
-     * Options, the shop opened from the revive popup goes back there; closing the daily gift collects it.
+     * Options; closing the daily gift collects it.
      * The revive popup stays until you revive or give up.
      */
     private fun closeDialog() {
@@ -2258,7 +2233,6 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialog = when {
             dialog == Dialog.RESTART -> Dialog.OPTIONS
             dialog == Dialog.AVATAR && avatarFromOptions -> Dialog.OPTIONS
-            dialog == Dialog.SHOP && shopFromRevive && battle.playerDown -> Dialog.REVIVE
             dialog == Dialog.REVIVE -> Dialog.REVIVE
             else -> null
         }
@@ -2797,18 +2771,57 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         }
     }
 
+    /**
+     * The level's title card as every duel starts (a new level, a retry, a revive): the opponent's
+     * figure on a soft light, "Level X" and its name. It pops in, stays through the intro (nobody casts
+     * yet) and fades as the duel begins.
+     */
     private fun drawBanner(c: Canvas) {
         val t = battle.time
         val intro = battle.introTime
-        if (t > intro + 0.5f) return
-        val a = if (t < intro) 1f else 1f - (t - intro) / 0.5f
+        if (t > intro + BANNER_FADE) return
+        val a = if (t < intro) smooth01(t / BANNER_POP) else 1f - (t - intro) / BANNER_FADE
+        val pop = 0.9f + 0.1f * easeOut(min(1f, t / BANNER_POP))
         val cx = fieldLeft + 2.5f * fu
         val cy = fieldTop + 2.5f * fu
-        rect.set(left + 0.4f * u, cy - 1.1f * u, right - 0.4f * u, cy + 1.0f * u)
-        fill.color = withAlpha(0xFF0B0820.toInt(), (215 * a).toInt())
+        val imgH = 2.5f * u
+        val h = 0.3f * u + imgH + 1.6f * u
+        val top = cy - h / 2f
+        c.save()
+        c.scale(pop, pop, cx, cy)
+        rect.set(left + 0.4f * u, top, right - 0.4f * u, top + h)
+        fill.color = withAlpha(0xFF0B0820.toInt(), (225 * a).toInt())
         c.drawRoundRect(rect, 0.3f * u, 0.3f * u, fill)
-        label(c, opponentName(battle.opponent), cx, cy - 0.15f * u, 0.62f * u, GOLD, Paint.Align.CENTER, a)
-        label(c, if (t < intro * 0.6f) s(R.string.get_ready) else s(R.string.duel), cx, cy + 0.62f * u, 0.42f * u, Pal.TEXT, Paint.Align.CENTER, a)
+        stroke.color = withAlpha(GOLD, (170 * a).toInt())
+        stroke.strokeWidth = 0.04f * u
+        c.drawRoundRect(rect, 0.3f * u, 0.3f * u, stroke)
+        val foot = top + 0.3f * u + imgH
+        val o = battle.opponent
+        val sprite = enemyAvatar
+        val glow = when {
+            o.kind == AvatarKind.DUMMY -> BANNER_DUMMY_GLOW
+            sprite != null -> sprite.glow
+            else -> mix(o.robeColor, WHITE, 0.3f)
+        }
+        val gy = foot - imgH * 0.45f
+        fill.shader = RadialGradient(cx, gy, imgH * 0.65f, withAlpha(glow, (80 * a).toInt()), withAlpha(glow, 0), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, gy, imgH * 0.65f, fill)
+        fill.shader = null
+        when {
+            o.kind == AvatarKind.DUMMY -> art.drawDummySprite(c, cx, foot, imgH * 0.95f, -1, 0f, 0f, a)
+            sprite != null -> {
+                // Trimmed to the figure (bot frames keep room for their magic).
+                val src = art.opaqueBounds(sprite.idleRes)
+                val w = imgH * src.width() / src.height()
+                bitmapPaint.alpha = (255 * a).toInt()
+                c.drawBitmap(art.image(sprite.idleRes), src, RectF(cx - w / 2f, foot - imgH, cx + w / 2f, foot), bitmapPaint)
+                bitmapPaint.alpha = 255
+            }
+            else -> art.drawMage(c, cx, foot, imgH * 0.9f, false, o.robeColor, true, null, 0f, clock, 0f, 0f, a)
+        }
+        label(c, s(R.string.level_fmt, level + 1), cx, foot + 0.8f * u, 0.7f * u, GOLD, Paint.Align.CENTER, a)
+        label(c, opponentName(o), cx, foot + 1.32f * u, 0.38f * u, Pal.TEXT, Paint.Align.CENTER, a)
+        c.restore()
     }
 
     /** When the end card starts fading in: soon after you give up (your collapse played before the revive popup). */
@@ -2902,8 +2915,12 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val REVIVE_ANIM_TIME = 3f
         const val REVIVE_HOLD = 0.45f
 
-        /** After a revive your HP bar fills up over this long. */
-        const val HP_REFILL_TIME = 0.8f
+        /** The level's title card pops in over this long and fades out over this long after the intro. */
+        const val BANNER_POP = 0.25f
+        const val BANNER_FADE = 0.5f
+
+        /** The light behind the training dummies on the title card. */
+        val BANNER_DUMMY_GLOW = 0xFFE0B46A.toInt()
 
         /** After you give up, the end card starts fading in this soon. */
         const val GIVE_UP_CARD_DELAY = 0.25f
