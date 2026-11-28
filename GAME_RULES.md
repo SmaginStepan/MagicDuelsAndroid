@@ -92,14 +92,14 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 - The game opens on a start menu: your **essence** in the top right corner (a tap opens the shop),
   **Continue** (shows your level and next opponent), and two by two **Leaderboard**, **Shop**, PvP duel
   ("coming soon") and **Options** (language, sound, your name, your avatar, and **Restart game**, which
-  asks first and then goes back to level 1 with the tutorial; it keeps your essence and streak). In a
-  duel, the **Menu** button or Android Back returns to the menu (the duel pauses); Back on the menu
-  closes the app.
+  asks first and then goes back to level 1 with the tutorial; it keeps your essence, streak and unlocked
+  avatars). In a duel, the **Menu** button or Android Back returns to the menu (the duel pauses); Back
+  on the menu closes the app.
 - The first time the app opens, it asks your name (once, if none is set; Options can change it).
 
 ## Essence, revives and the shop (`Economy.kt`)
-- **Essence** (the glowing crystal) is collected from the daily gift and the shop; revives are free.
-  A new player starts with **3**.
+- **Essence** (the glowing crystal) is collected from the daily gift and the shop, and unlocks paid
+  avatars; revives are free. A new player starts with **3**.
 - **Daily gift**: the first time the app opens on a new day (the phone's date), a popup shows the
   7-day streak and today's gift: **1 essence** plus a **streak bonus** of 0, 1, 1, 2, 2, 3, 5 on days
   1 to 7 in a row (1, 2, 2, 3, 3, 4, 6 in all, 21 a week). **Collect** adds it and the menu's counter
@@ -113,7 +113,13 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
   the menu, and the popup is waiting when you return to the duel. Revives work against the dummies too
   and don't change the leaderboard.
 - **Shop**: essence packs of 10, 30 and 100 (free test purchases in debug builds; "soon" in release
-  builds until Google Play billing is in) and, coming soon, paid avatars.
+  builds until Google Play billing is in) and the **avatars**.
+- **Avatars**: only the Archmage is free. The Sorceress costs **3** essence and the Conjurer **5**;
+  unlocked once, they are yours for good. In the shop and in "Choose your avatar" a locked one shows
+  its price (dimmed in the picker); a tap opens the unlock popup (the figure, its price, your essence,
+  Cancel and Unlock, or Shop instead when you are short). Unlocking puts the avatar on. An avatar you
+  own is put on with a tap (the shop marks it Owned, or Chosen when it is yours now). A paid avatar
+  chosen before avatars had prices goes back to the Archmage.
 
 ## Leaderboard
 - An online board of every player's **highest level** and name, on the ScoreServer service
@@ -159,4 +165,4 @@ A match-3 duel for Android (Kotlin, portrait). All numbers live in
 Start: 4 elements (fire, water, earth, air). Lightning and shadow are already drawn and ready to unlock later.
 
 ## Not built yet
-Player levelling up / unlocking elements, PvP, paid avatars, buying essence (Google Play billing).
+Player levelling up / unlocking elements, PvP, buying essence (Google Play billing).

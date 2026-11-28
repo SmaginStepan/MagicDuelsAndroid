@@ -146,8 +146,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     private var soundOn = prefs.getBoolean(KEY_SOUND, true)
     private var playerName = prefs.getString(KEY_NAME, "") ?: ""
 
-    /** Your avatar (Options or a tap on your mage opens "Choose your avatar"). */
-    private var avatar = Avatars.byId(prefs.getString(KEY_AVATAR, null))
+    /** The paid avatars you have unlocked (by id); the free one is always yours. */
+    private val ownedAvatars: MutableSet<String> = HashSet(prefs.getStringSet(KEY_OWNED_AVATARS, null) ?: emptySet())
+
+    private fun owns(a: Avatar): Boolean = !a.paid || a.id in ownedAvatars
+
+    /**
+     * Your avatar (Options or a tap on your mage opens "Choose your avatar"). A paid one you haven't
+     * unlocked (chosen before avatars had prices) goes back to the free one.
+     */
+    private var avatar = Avatars.byId(prefs.getString(KEY_AVATAR, null)).let { if (owns(it)) it else Avatars.all.first() }
 
     /** Essence (a revive costs it) and the daily gift's streak; saved with the rest. */
     private val economy = Economy(
@@ -206,12 +214,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
 
     // ---- screens: the start menu (with small dialogs) and the duel ----
     private enum class Screen { MENU, BATTLE }
-    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS, AVATAR, DAILY, REVIVE, SHOP }
+    private enum class Dialog { RESTART, LEADERBOARD, PVP, OPTIONS, AVATAR, DAILY, REVIVE, SHOP, UNLOCK }
     private var screen = Screen.MENU
     private var dialog: Dialog? = null
 
     /** The "Choose your avatar" popup was opened from Options (closing it goes back there). */
     private var avatarFromOptions = false
+
+    /** The avatar in the unlock popup, and the popup it was opened from (closing goes back there). */
+    private var unlocking: Avatar? = null
+    private var unlockFrom: Dialog? = null
 
     /** When the shop last said purchases are coming soon (a tap on a pack in a release build). */
     private var shopNoteAt = -10f
@@ -504,7 +516,34 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             .putInt(KEY_ESSENCE, economy.essence)
             .putLong(KEY_LAST_CLAIM_DAY, economy.lastClaimDay)
             .putInt(KEY_STREAK_DAY, economy.streakDay)
+            .putStringSet(KEY_OWNED_AVATARS, HashSet(ownedAvatars))
             .apply()
+    }
+
+    /** Puts on avatar [a] (one you own) and saves the choice. */
+    private fun chooseAvatar(a: Avatar) {
+        avatar = a
+        art.prepareAvatarCast(avatar, castAnim)
+        prepareSprites()
+        save()
+    }
+
+    /** A tap on an avatar you don't have yet: the unlock popup (closing it goes back to [from]). */
+    private fun offerUnlock(a: Avatar, from: Dialog) {
+        unlocking = a
+        unlockFrom = from
+        openDialog(Dialog.UNLOCK)
+    }
+
+    /** Unlocks the avatar in the popup for its price, puts it on and goes back to where the popup came from. */
+    private fun unlockAvatar() {
+        val a = unlocking ?: return
+        if (!economy.spend(a.price)) return
+        ownedAvatars += a.id
+        chooseAvatar(a)
+        essencePulse = 1f
+        sounds.play(Sounds.Fx.FREEZE, 0.8f)
+        closeDialog()
     }
 
     // ================================================================ essence: daily gift, revives, shop
@@ -1004,12 +1043,22 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                     openDialog(Dialog.AVATAR)
                 }
                 hit != null && hit.startsWith("avatar_") -> {
-                    avatar = Avatars.byId(hit.removePrefix("avatar_"))
-                    art.prepareAvatarCast(avatar, castAnim)
-                    prepareSprites()
-                    save()
-                    closeDialog()
+                    val a = Avatars.byId(hit.removePrefix("avatar_"))
+                    if (owns(a)) {
+                        chooseAvatar(a)
+                        closeDialog()
+                    } else {
+                        offerUnlock(a, Dialog.AVATAR)
+                    }
                 }
+                // An avatar in the shop: unlock it, or put on one you own.
+                hit != null && hit.startsWith("skin_") -> {
+                    val a = Avatars.byId(hit.removePrefix("skin_"))
+                    if (owns(a)) chooseAvatar(a) else offerUnlock(a, Dialog.SHOP)
+                }
+                hit == "unlock" -> unlockAvatar()
+                hit == "unlock_cancel" -> closeDialog()
+                hit == "unlock_shop" -> openDialog(Dialog.SHOP)
                 hit == "sound" -> {
                     soundOn = !soundOn
                     sounds.enabled = soundOn
@@ -1024,7 +1073,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
                 // The daily gift and the revive popup wait for their buttons.
                 open == Dialog.DAILY || open == Dialog.REVIVE -> Unit
                 // A tap outside the card closes it ("coming soon" cards close on any tap).
-                open == Dialog.SHOP -> if (!dialogCard.contains(x, y)) closeDialog()
+                open == Dialog.SHOP || open == Dialog.UNLOCK -> if (!dialogCard.contains(x, y)) closeDialog()
                 open == Dialog.RESTART -> if (!dialogCard.contains(x, y)) openDialog(Dialog.OPTIONS)
                 open == Dialog.OPTIONS -> if (!dialogCard.contains(x, y)) dialog = null
                 open == Dialog.AVATAR -> if (!dialogCard.contains(x, y)) closeDialog()
@@ -2135,8 +2184,8 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * The shop: essence packs (free to test in debug builds; bought through Google Play later) and,
-     * coming soon, avatars. Your essence shows in the corner.
+     * The shop: essence packs (free to test in debug builds; bought through Google Play later) and the
+     * paid avatars, unlocked with essence (a card says more are coming). Your essence shows in the corner.
      */
     private fun drawShop(c: Canvas) {
         val w = min(width - 1.2f * u, 7.6f * u)
@@ -2144,7 +2193,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         val gap = 0.25f * u
         val packW = (w - 2 * pad - (SHOP_PACKS.size - 1) * gap) / SHOP_PACKS.size
         val packH = packW * 1.3f
-        val skinsH = 1.4f * u
+        val skinsH = packW * 1.75f
         val h = 1.3f * u + 0.5f * u + packH + 0.55f * u + 0.5f * u + skinsH + 0.35f * u + 0.8f * u + pad
         val card = drawCard(c, w, h, s(R.string.shop))
         val cx = card.centerX()
@@ -2188,19 +2237,93 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         y += 0.55f * u
         label(c, s(R.string.shop_avatars), card.left + pad, y + 0.3f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.LEFT)
         y += 0.5f * u
-        val skins = RectF(card.left + pad, y, card.right - pad, y + skinsH)
-        fill.color = withAlpha(BLACK, 70)
-        c.drawRoundRect(skins, 0.25f * u, 0.25f * u, fill)
-        stroke.color = withAlpha(WHITE, 40)
-        stroke.strokeWidth = 0.03f * u
-        c.drawRoundRect(skins, 0.25f * u, 0.25f * u, stroke)
-        val lines = wrap(s(R.string.shop_avatars_soon), 0.28f * u, skins.width() - 0.6f * u)
-        val ly = skins.centerY() - (lines.size - 1) * 0.19f * u + 0.1f * u
-        lines.forEachIndexed { i, line -> label(c, line, cx, ly + i * 0.38f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER) }
+        // The paid avatars: the figure on its crystal's light, its name, and its price (or Chosen /
+        // Owned once unlocked; a tap on one you own puts it on). The last card says more are coming.
+        val forSale = Avatars.paid
+        for (i in 0..forSale.size) {
+            val x = card.left + pad + i * (packW + gap)
+            val r = RectF(x, y, x + packW, y + skinsH)
+            fill.color = withAlpha(BLACK, 90)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            val a = forSale.getOrNull(i)
+            if (a == null) {
+                stroke.color = withAlpha(WHITE, 40)
+                stroke.strokeWidth = 0.03f * u
+                c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+                val lines = wrap(s(R.string.avatar_more), 0.26f * u, packW - 0.3f * u)
+                val ly = r.centerY() - (lines.size - 1) * 0.18f * u + 0.09f * u
+                lines.forEachIndexed { k, line -> label(c, line, r.centerX(), ly + k * 0.36f * u, 0.26f * u, Pal.TEXT_DIM, Paint.Align.CENTER) }
+                continue
+            }
+            val owned = owns(a)
+            fill.shader = RadialGradient(r.centerX(), r.top + skinsH * 0.4f, packW * 0.62f, withAlpha(a.glow, 70), withAlpha(a.glow, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, fill)
+            fill.shader = null
+            val src = art.opaqueBounds(a.idleRes)
+            val ih = skinsH - 1.05f * u
+            val iw = ih * src.width() / src.height()
+            bitmapPaint.alpha = if (owned) 255 else 150
+            c.drawBitmap(art.avatarIdle(a), src, RectF(r.centerX() - iw / 2f, r.top + 0.12f * u, r.centerX() + iw / 2f, r.top + 0.12f * u + ih), bitmapPaint)
+            bitmapPaint.alpha = 255
+            label(c, s(a.nameRes), r.centerX(), r.bottom - 0.58f * u, 0.26f * u, Pal.TEXT, Paint.Align.CENTER)
+            val chosen = a.id == avatar.id
+            when {
+                chosen -> label(c, s(R.string.avatar_chosen), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, GOLD, Paint.Align.CENTER)
+                owned -> label(c, s(R.string.avatar_owned), r.centerX(), r.bottom - 0.18f * u, 0.24f * u, Pal.TEXT_DIM, Paint.Align.CENTER)
+                else -> drawAmount(c, "${a.price}", r.centerX(), r.bottom - 0.17f * u, 0.3f * u, GOLD, Paint.Align.CENTER)
+            }
+            stroke.color = if (chosen) GOLD else withAlpha(a.glow, 120)
+            stroke.strokeWidth = (if (chosen) 0.06f else 0.035f) * u
+            c.drawRoundRect(r, 0.25f * u, 0.25f * u, stroke)
+            dialogButtons["skin_${a.id}"] = r
+        }
         val by = card.bottom - pad - 0.8f * u
         val close = RectF(cx - 1.4f * u, by, cx + 1.4f * u, by + 0.8f * u)
         drawButton(c, close, s(R.string.close), null, primary = false, small = true)
         dialogButtons["close"] = close
+    }
+
+    /**
+     * Unlocking a paid avatar: the figure on its crystal's light, its price and the essence you have,
+     * with Cancel and Unlock. Short of essence, a note says where to get more and Shop replaces Unlock.
+     */
+    private fun drawUnlock(c: Canvas) {
+        val a = unlocking ?: return
+        val w = min(width - 1.6f * u, 6.8f * u)
+        val pad = 0.35f * u
+        val picH = 3.8f * u
+        val enough = economy.essence >= a.price
+        val note = if (enough) emptyList() else wrap(s(R.string.not_enough_essence), 0.28f * u, w - 2 * pad)
+        val h = 1.3f * u + picH + 0.25f * u + 0.6f * u + 0.45f * u + note.size * 0.38f * u + 0.35f * u + 0.85f * u + pad
+        val card = drawCard(c, w, h, s(R.string.unlock_title_fmt, s(a.nameRes)))
+        val cx = card.centerX()
+        val pic = RectF(card.left + pad, card.top + 1.3f * u, card.right - pad, card.top + 1.3f * u + picH)
+        fill.color = withAlpha(BLACK, 90)
+        c.drawRoundRect(pic, 0.25f * u, 0.25f * u, fill)
+        fill.shader = RadialGradient(pic.centerX(), pic.top + picH * 0.45f, picH * 0.6f, withAlpha(a.glow, 90), withAlpha(a.glow, 0), Shader.TileMode.CLAMP)
+        c.drawRoundRect(pic, 0.25f * u, 0.25f * u, fill)
+        fill.shader = null
+        val src = art.opaqueBounds(a.idleRes)
+        val ih = picH - 0.3f * u
+        val iw = ih * src.width() / src.height()
+        c.drawBitmap(art.avatarIdle(a), src, RectF(cx - iw / 2f, pic.top + 0.15f * u, cx + iw / 2f, pic.top + 0.15f * u + ih), bitmapPaint)
+        stroke.color = withAlpha(a.glow, 140)
+        stroke.strokeWidth = 0.035f * u
+        c.drawRoundRect(pic, 0.25f * u, 0.25f * u, stroke)
+        var y = pic.bottom + 0.25f * u
+        drawAmount(c, "${a.price}", cx, y + 0.48f * u, 0.5f * u, GOLD, Paint.Align.CENTER)
+        y += 0.6f * u
+        drawAmount(c, s(R.string.you_have_fmt, (shownEssence + 0.5f).toInt()), cx, y + 0.34f * u, 0.28f * u, Pal.TEXT_DIM, Paint.Align.CENTER, glow = essencePulse)
+        y += 0.45f * u
+        note.forEachIndexed { i, line -> label(c, line, cx, y + 0.3f * u + i * 0.38f * u, 0.28f * u, Pal.TEXT, Paint.Align.CENTER) }
+        val by = card.bottom - pad - 0.85f * u
+        val half = (w - 2 * pad - 0.3f * u) / 2f
+        val cancel = RectF(card.left + pad, by, card.left + pad + half, by + 0.85f * u)
+        val go = RectF(card.right - pad - half, by, card.right - pad, by + 0.85f * u)
+        drawButton(c, cancel, s(R.string.cancel), null, primary = false, small = true)
+        dialogButtons["unlock_cancel"] = cancel
+        drawButton(c, go, s(if (enough) R.string.unlock else R.string.shop), null, primary = true, small = true)
+        dialogButtons[if (enough) "unlock" else "unlock_shop"] = go
     }
 
     private fun openDialog(d: Dialog) {
@@ -2221,6 +2344,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         dialog = when {
             dialog == Dialog.RESTART -> Dialog.OPTIONS
             dialog == Dialog.AVATAR && avatarFromOptions -> Dialog.OPTIONS
+            dialog == Dialog.UNLOCK -> unlockFrom
             dialog == Dialog.REVIVE -> Dialog.REVIVE
             else -> null
         }
@@ -2342,9 +2466,10 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
     }
 
     /**
-     * "Choose your avatar": a card per avatar (free and, later, paid ones) in a grid of two, each with
-     * its idle pose and name. Yours is outlined in gold. A last card says more avatars are coming.
-     * A tap on an avatar picks it and closes the popup.
+     * "Choose your avatar": a card per avatar in a grid of two, each with its idle pose and name: the
+     * free one marked Free, the paid ones you haven't unlocked dimmed with their price. Yours is outlined
+     * in gold. A last card says more avatars are coming. A tap on one you own picks it and closes the
+     * popup; on a locked one it opens the unlock popup.
      */
     private fun drawAvatarPicker(c: Canvas) {
         val w = min(width - 1.2f * u, 7.6f * u)
@@ -2395,9 +2520,16 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             val src = art.opaqueBounds(a.idleRes)
             val iw = ih * src.width() / src.height()
             rect.set(r.centerX() - iw / 2f, r.top + 0.1f * u, r.centerX() + iw / 2f, r.top + 0.1f * u + ih)
+            // One you haven't unlocked is dimmed, with its price in the corner (a tap opens the unlock popup).
+            val owned = owns(a)
+            bitmapPaint.alpha = if (owned) 255 else 150
             c.drawBitmap(img, src, rect, bitmapPaint)
+            bitmapPaint.alpha = 255
             label(c, s(a.nameRes), r.centerX(), r.bottom - 0.3f * u, 0.3f * u, Pal.TEXT, Paint.Align.CENTER)
-            if (!a.paid) label(c, s(R.string.avatar_free), r.right - 0.15f * u, r.top + 0.35f * u, 0.22f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+            when {
+                !a.paid -> label(c, s(R.string.avatar_free), r.right - 0.15f * u, r.top + 0.35f * u, 0.22f * u, Pal.TEXT_DIM, Paint.Align.RIGHT)
+                !owned -> drawAmount(c, "${a.price}", r.right - 0.15f * u, r.top + 0.42f * u, 0.3f * u, GOLD, Paint.Align.RIGHT)
+            }
             val chosen = a.id == avatar.id
             stroke.color = if (chosen) GOLD else withAlpha(WHITE, 40)
             stroke.strokeWidth = (if (chosen) 0.07f else 0.03f) * u
@@ -2517,6 +2649,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
             Dialog.DAILY -> return drawDaily(c)
             Dialog.REVIVE -> return drawRevive(c)
             Dialog.SHOP -> return drawShop(c)
+            Dialog.UNLOCK -> return drawUnlock(c)
             else -> Unit
         }
         val (title, message) = when (d) {
@@ -2887,6 +3020,7 @@ class GameView(context: Context) : View(context), Choreographer.FrameCallback {
         const val KEY_ESSENCE = "essence"
         const val KEY_LAST_CLAIM_DAY = "lastClaimDay"
         const val KEY_STREAK_DAY = "streakDay"
+        const val KEY_OWNED_AVATARS = "ownedAvatars"
 
         /** Essence: the crystal's glow, its lit and its shaded side. */
         val ESSENCE = 0xFF6FE8FF.toInt()

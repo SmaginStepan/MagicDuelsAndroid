@@ -11,8 +11,8 @@ import com.an0obis.magicduel.R
  * [tipX], [tipY]: where the staff's glowing crystal is, as a share of the frame's width and height,
  * so cast glows and bolts start there. [glow]: the crystal's colour. [scale]: the frame's height in
  * the duel relative to the others', for a frame with extra room above the figure (Google Flow clips
- * keep room for magic over the head), so every figure stands as tall. [paid] avatars will be bought
- * in the store later; for now every avatar is free.
+ * keep room for magic over the head), so every figure stands as tall. [price]: the essence it costs
+ * to unlock (0 for the free one); once unlocked it is yours for good.
  */
 class Avatar(
     val id: String,
@@ -25,14 +25,16 @@ class Avatar(
     val tipX: Float,
     val tipY: Float,
     val glow: Int,
-    val paid: Boolean = false,
+    val price: Int = 0,
     val scale: Float = 1f,
     /**
      * Its revive in the revive popup (a sheet like the casts): rising from the defeated pose to the
      * idle one. Without one the popup plays the collapse backwards.
      */
     val reviveRes: Int? = null,
-)
+) {
+    val paid: Boolean get() = price > 0
+}
 
 object Avatars {
     val MAGE = Avatar(
@@ -50,7 +52,7 @@ object Avatars {
         // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); the frame has room for magic
         // over her head, so it's drawn taller.
         tipX = 0.238f, tipY = 0.223f, glow = 0xFFB98CFF.toInt(), scale = 1.16f,
-        reviveRes = R.drawable.avatar_sorceress_revive,
+        reviveRes = R.drawable.avatar_sorceress_revive, price = 3,
     )
     val CONJURER = Avatar(
         "conjurer", R.string.avatar_conjurer, R.drawable.avatar_conjurer,
@@ -58,11 +60,14 @@ object Avatars {
         R.drawable.avatar_conjurer_defeat, R.drawable.avatar_conjurer_defeated,
         // Casts and defeat made with Google Flow (art/avatars/PROMPTS.md); room for magic over his head.
         tipX = 0.856f, tipY = 0.222f, glow = 0xFFFFB347.toInt(), scale = 1.09f,
-        reviveRes = R.drawable.avatar_conjurer_revive,
+        reviveRes = R.drawable.avatar_conjurer_revive, price = 5,
     )
 
-    /** Every avatar, free ones first; the first is the default. */
+    /** Every avatar, the free one first (it is the default): the Archmage; then the paid ones. */
     val all = listOf(MAGE, SORCERESS, CONJURER)
+
+    /** The avatars on sale (shown in the shop). */
+    val paid: List<Avatar> get() = all.filter { it.paid }
 
     fun byId(id: String?): Avatar = all.firstOrNull { it.id == id } ?: all.first()
 

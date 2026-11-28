@@ -64,6 +64,12 @@
     <string name="avatar_sorceress">Hechicera</string>
     <string name="avatar_conjurer">Conjurador</string>
     <string name="avatar_free">Gratis</string>
+    <string name="avatar_owned">Tuyo</string>
+    <string name="avatar_chosen">Elegido</string>
+    <string name="unlock_title_fmt">¿Desbloquear %1$s?</string>
+    <string name="unlock">Desbloquear</string>
+    <string name="you_have_fmt">Tienes %1$d</string>
+    <string name="not_enough_essence">No tienes suficiente esencia. Recoge el regalo diario o consigue un pack en la tienda.</string>
     <string name="avatar_more">Pronto más avatares</string>
 
     <!-- Esencia: el regalo diario, revivir y la tienda -->
@@ -82,7 +88,6 @@
     <string name="revived">¡De vuelta en pie!</string>
     <string name="shop_essence">Packs de esencia</string>
     <string name="shop_avatars">Avatares</string>
-    <string name="shop_avatars_soon">Pronto aparecerán aquí nuevos avatares.</string>
     <string name="shop_free_test">Gratis · prueba</string>
     <string name="shop_soon_msg">Las compras llegarán pronto.</string>
 

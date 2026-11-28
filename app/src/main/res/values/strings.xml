@@ -68,6 +68,12 @@
     <string name="avatar_sorceress">Sorceress</string>
     <string name="avatar_conjurer">Conjurer</string>
     <string name="avatar_free">Free</string>
+    <string name="avatar_owned">Owned</string>
+    <string name="avatar_chosen">Chosen</string>
+    <string name="unlock_title_fmt">Unlock %1$s?</string>
+    <string name="unlock">Unlock</string>
+    <string name="you_have_fmt">You have %1$d</string>
+    <string name="not_enough_essence">Not enough essence. Collect the daily gift, or get a pack in the shop.</string>
     <string name="avatar_more">More avatars soon</string>
 
     <!-- Essence: the daily gift, revives and the shop -->
@@ -86,7 +92,6 @@
     <string name="revived">Back on your feet!</string>
     <string name="shop_essence">Essence packs</string>
     <string name="shop_avatars">Avatars</string>
-    <string name="shop_avatars_soon">New avatars will appear here soon.</string>
     <string name="shop_free_test">Free · test</string>
     <string name="shop_soon_msg">Purchases are coming soon.</string>
 

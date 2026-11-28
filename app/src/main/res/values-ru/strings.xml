@@ -64,6 +64,12 @@
     <string name="avatar_sorceress">Чародейка</string>
     <string name="avatar_conjurer">Заклинатель</string>
     <string name="avatar_free">Бесплатно</string>
+    <string name="avatar_owned">Открыт</string>
+    <string name="avatar_chosen">Выбран</string>
+    <string name="unlock_title_fmt">Открыть облик «%1$s»?</string>
+    <string name="unlock">Открыть</string>
+    <string name="you_have_fmt">У вас %1$d</string>
+    <string name="not_enough_essence">Не хватает эссенции. Заберите ежедневный подарок или возьмите набор в магазине.</string>
     <string name="avatar_more">Скоро новые аватары</string>
 
     <!-- Эссенция: ежедневный подарок, воскрешения и магазин -->
@@ -82,7 +88,6 @@
     <string name="revived">Снова в бою!</string>
     <string name="shop_essence">Наборы эссенции</string>
     <string name="shop_avatars">Аватары</string>
-    <string name="shop_avatars_soon">Скоро здесь появятся новые аватары.</string>
     <string name="shop_free_test">Бесплатно · тест</string>
     <string name="shop_soon_msg">Покупки скоро появятся.</string>
 
